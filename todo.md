@@ -95,4 +95,13 @@
 - [x] Repair successful sign-up so it creates the session, shows a success notification, and immediately opens the protected support homepage.
 - [x] Repair successful sign-in so it shows a success notification and immediately opens the protected support homepage.
 - [x] Add automated and desktop/mobile browser coverage for the repaired account-gateway click, success-notification, and homepage-transition flows.
-- [ ] Checkpoint and deliver the repaired authentication interaction flow.
+- [x] Checkpoint the repaired authentication interaction flow as version 079bba4d and prepare its verified delivery summary.
+- [ ] Inspect the connected Vercel project’s latest deployment status, build settings, environment requirements, and runtime logs.
+- [ ] Audit CampusFix’s current build, Express runtime, database, authentication, and static-serving assumptions for Vercel compatibility.
+- [ ] Implement a production-safe Vercel deployment adapter or configuration without changing the CampusFix user workflows.
+- [ ] Add Vercel-oriented build and runtime regression checks, then verify the corrected deployment behavior.
+- [ ] Checkpoint and deliver the Vercel deployment repair with the required configuration guidance.
+- [x] Diagnose why an expected duplicate username is still emitted as a disruptive client-side API mutation error: the server already returned a safe duplicate-username response, but the generic client mutation listener logged it as an API failure and the gateway gave no recovery action.
+- [x] Present duplicate usernames as an inline, actionable account-gateway state that offers existing-user sign-in or choosing another username.
+- [x] Add automated coverage for duplicate-account recovery alongside successful sign-in and registration transitions.
+- [ ] Checkpoint and deliver the corrected duplicate-username registration interaction.

@@ -42,7 +42,14 @@ async function createAccountAndVerifyDesktop(browser) {
 async function verifyMobileLoginAndNavigation(browser) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "I’m an existing user" }).click();
+  await page.getByRole("button", { name: "I’m new to CampusFix" }).click();
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Create secure account" }).click();
+  await page.locator(".account-duplicate-recovery").waitFor();
+  await page.screenshot({ path: "/home/ubuntu/account-verification-duplicate-recovery.png", fullPage: true });
+  await page.getByRole("button", { name: `Sign in as ${username}` }).click();
+  await page.getByRole("heading", { name: "Welcome back." }).waitFor();
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in to CampusFix" }).click();
@@ -67,7 +74,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   await createAccountAndVerifyDesktop(browser);
   await verifyMobileLoginAndNavigation(browser);
-  console.log(JSON.stringify({ status: "passed", username, screenshots: 5 }));
+  console.log(JSON.stringify({ status: "passed", username, screenshots: 6 }));
 } finally {
   await browser.close();
 }

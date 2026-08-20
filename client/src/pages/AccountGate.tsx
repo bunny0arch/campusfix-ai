@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, KeyRound, LoaderCircle, ShieldCheck, UserRound }
 import { FormEvent, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { accountSuccessFeedback } from "@/lib/account-feedback";
+import { accountSuccessFeedback, isUsernameUnavailableError } from "@/lib/account-feedback";
 
 type AccountMode = "choice" | "login" | "register";
 
@@ -11,12 +11,14 @@ export default function AccountGate({ onAuthenticated }: { onAuthenticated: () =
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [unavailableUsername, setUnavailableUsername] = useState<string | null>(null);
   const register = trpc.account.register.useMutation();
   const login = trpc.account.login.useMutation();
   const busy = register.isPending || login.isPending;
 
   const selectMode = (next: Exclude<AccountMode, "choice">) => {
     setError(null);
+    setUnavailableUsername(null);
     setPassword("");
     setMode(next);
   };
@@ -24,6 +26,7 @@ export default function AccountGate({ onAuthenticated }: { onAuthenticated: () =
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setUnavailableUsername(null);
     try {
       if (mode === "choice") return;
       const completedMode: "login" | "register" = mode;
@@ -33,6 +36,11 @@ export default function AccountGate({ onAuthenticated }: { onAuthenticated: () =
       toast.success(feedback.title, { description: feedback.description });
       await onAuthenticated();
     } catch (caught) {
+      if (mode === "register" && isUsernameUnavailableError(caught)) {
+        const requestedUsername = username.trim();
+        setUnavailableUsername(requestedUsername);
+        return;
+      }
       const message = caught instanceof Error ? caught.message : "We could not complete that request.";
       setError(message);
       toast.error("Account access could not be completed", { description: message });
@@ -60,13 +68,13 @@ export default function AccountGate({ onAuthenticated }: { onAuthenticated: () =
             <button type="button" onClick={() => selectMode("register")} className="account-path new"><span className="account-path-icon"><UserRound size={19} /></span><span><strong>I’m new to CampusFix</strong><small>Create a private account in a moment.</small></span><ArrowRight size={17} /></button>
           </div>
         </div> : <form onSubmit={submit} className="account-form-card account-pop-in">
-          <button type="button" className="account-back" onClick={() => { setMode("choice"); setError(null); }}><ArrowLeft size={15} /> Back</button>
+          <button type="button" className="account-back" onClick={() => { setMode("choice"); setError(null); setUnavailableUsername(null); }}><ArrowLeft size={15} /> Back</button>
           <p className="panel-label">{mode === "login" ? "EXISTING USER" : "NEW USER"}</p>
           <h2>{mode === "login" ? "Welcome back." : "Set up your space."}</h2>
           <p className="account-form-intro">{mode === "login" ? "Enter the credentials you created for CampusFix." : "Choose a username and a password with at least 12 characters."}</p>
-          <label>Username<input autoFocus autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} minLength={3} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" required placeholder="e.g. alex.chen" /></label>
+          <label>Username<input autoFocus autoComplete="username" value={username} onChange={event => { setUsername(event.target.value); setUnavailableUsername(null); }} minLength={3} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" required placeholder="e.g. alex.chen" /></label>
           <label>Password<input autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={event => setPassword(event.target.value)} minLength={12} maxLength={128} required type="password" placeholder="At least 12 characters" /></label>
-          {error && <p className="account-form-error" role="alert">{error}</p>}
+          {unavailableUsername ? <div className="account-duplicate-recovery" role="status"><strong>That username already has a CampusFix account.</strong><span>Use the existing account if it is yours, or choose a different username.</span><div><button type="button" onClick={() => selectMode("login")}>Sign in as {unavailableUsername}</button><button type="button" onClick={() => { setUsername(""); setUnavailableUsername(null); }}>Choose another username</button></div></div> : error && <p className="account-form-error" role="alert">{error}</p>}
           <button className="account-submit" disabled={busy}>{busy ? <><LoaderCircle className="spin" size={16} /> Checking securely</> : <>{mode === "login" ? "Sign in to CampusFix" : "Create secure account"}<ArrowRight size={16} /></>}</button>
           <p className="account-security-note"><ShieldCheck size={13} /> Passwords are salted and hashed; they are never saved as readable text.</p>
         </form>}

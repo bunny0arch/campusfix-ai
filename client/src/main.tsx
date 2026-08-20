@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import "./index.css";
+import { isUsernameUnavailableError } from "./lib/account-feedback";
 
 const queryClient = new QueryClient();
 
@@ -18,7 +19,7 @@ queryClient.getQueryCache().subscribe(event => {
 queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
-    console.error("[API Mutation Error]", error);
+    if (!isUsernameUnavailableError(error)) console.error("[API Mutation Error]", error);
   }
 });
 
