@@ -66,3 +66,17 @@
 - [x] Exercise and verify warm-palette focus, voice fallback, safety guidance, and unresolved escalation states in the public support flow; responsive base and state styling are covered by desktop/mobile review plus automated tests.
 - [x] Capture final evidence of the warm focus treatment and mobile state controls before saving the palette refinement: desktop focus renders a 3 px pale-beige outline; the captured 390 px mobile review confirms compact, readable voice, safety, outcome, and issue controls without overflow, while shared state CSS and automated workflow coverage preserve the escalation and voice fallback states.
 - [x] Resolve and verify the development server's ESM module path for the low-latency model router before the final enhancement checkpoint.
+- [x] Design a secure local-account model with unique usernames, salted password hashes, session expiry, and SQL-injection-safe data access.
+- [x] Create database migrations and server endpoints for account registration, login, logout, authenticated session lookup, profile updates, and old-password-verified password changes.
+- [x] Build an animated existing-user/new-user account gateway that protects the CampusFix homepage until successful sign-in.
+- [x] Add a responsive post-login sidebar with Dashboard, Profile, and logout actions without redesigning the existing public support homepage.
+- [x] Build a protected Profile view for basic personal details and old-password-confirmed password changes.
+- [x] Add security-focused regression tests for account creation, credential rejection, session protection, profile persistence, password changes, and injection-like input.
+- [ ] Verify desktop and mobile account flows, checkpoint the secure account enhancement, and provide a concise security coverage summary.
+- [x] Confirm which configured MCPs and API keys are materially required for the account-enabled support flow, retain the existing model path only for diagnostics, and exclude ElevenLabs. No configured MCP action is required for local credentials, sessions, or profile storage.
+- [x] Add automated API/router coverage for account registration, login, logout, session lookup, invalid credentials, and rate-limit error handling.
+- [x] Add protected endpoint coverage proving unauthenticated users cannot read or update account profiles and verifying profile persistence for authenticated local users.
+- [x] Add automated password-rotation coverage for required old-password confirmation, other-session invalidation, and successful re-login with the new password.
+- [x] Add an automated successful-login regression proving valid local credentials return only safe user fields and issue a local session.
+- [x] Prove the protected updateProfile router operation rejects unauthenticated and non-local callers.
+- [x] Add a password-rotation regression proving the old password fails and the new password succeeds in a subsequent local login.
