@@ -86,7 +86,7 @@
 - [x] Diagnose why local-account registration fails when inserting a newly created username and password hash: the first registration succeeded, while a rapid repeat attempted the same username and the database driver's wrapped duplicate-key error was not mapped safely.
 - [x] Correct the local-account database or insertion error contract without a schema migration by traversing the database error cause chain and converting duplicate usernames into the expected safe response.
 - [x] Add regression coverage for the repaired registration path and re-verify account sign-up, login, sessions, and responsive entry flow.
-- [ ] Checkpoint and deliver the repaired account-registration flow.
+- [x] Checkpoint the repaired account-registration flow as version 0bf1a9aa and prepare its verified delivery summary.
 - [x] Run a live end-to-end registration with a new username and verify the resulting session and login behavior after the duplicate-error repair.
 - [x] Re-run browser-based desktop and mobile account-entry verification after the registration repair and record the successful evidence.
 - [x] Remove the runtime deprecation warning from local-session cookie clearing and confirm logout behavior remains covered.
