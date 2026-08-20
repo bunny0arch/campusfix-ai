@@ -11,6 +11,8 @@ The response headers confirm the issue: the root returns **HTTP 200** with `cont
 
 The associated routes are also absent from the live deployment: `GET /api/trpc` returns Vercel `404 NOT_FOUND`, and the client deep link `GET /profile` returns the same `404 NOT_FOUND`. These results confirm that neither the serverless API rewrite nor the SPA fallback is active in the deployment currently behind the supplied URL.
 
+After the static and SPA routing repair, the Vercel root and deep links updated successfully, but both tRPC and public POST probes returned `FUNCTION_INVOCATION_FAILED`. The serverless cold-start graph has been made portable by replacing local Vite-only `@shared/*` aliases in the eager OAuth and tRPC dependencies with explicit relative imports. The complete suite, type check, and separated production build pass locally; the next deployment revision requires live API verification.
+
 This indicates that the currently deployed Vercel project is serving the Node server bundle as its static entry point rather than serving the Vite client build from `dist/public` and routing API requests through a Vercel Function.
 
 ## Required production configuration

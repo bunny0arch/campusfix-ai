@@ -111,7 +111,10 @@
 - [x] Prevent Vercel from ever serving the bundled Node server artifact as the static site root by separating the Vite client output (`dist`) from the local Node build output (`server-dist`); a production smoke test now returns `text/html` from the root.
 - [x] Inspect the current deployed Vercel API response and a SPA deep link, then record the pre-redeploy behavior: both `/api/trpc` and `/profile` return Vercel `404 NOT_FOUND`, confirming no function routing or SPA rewrite is currently deployed.
 - [ ] After the corrected revision is deployed, re-run live root, API, SPA routing, local-account, and diagnostic verification on Vercel.
+- [ ] Diagnose and repair the live Vercel `FUNCTION_INVOCATION_FAILED` cold-start failure affecting both tRPC and public API routes after static routing is corrected.
+- [x] Eliminate local-only shared-module aliases from the Vercel cold-start import graph and verify the serverless entry can load without Vite path-alias resolution; this tracker entry is superseded by the completed verification recorded immediately below.
+- [x] Eliminate local-only shared-module aliases from the Vercel cold-start import graph and verify the serverless entry can load without Vite path-alias resolution.
 - [x] Diagnose why an expected duplicate username is still emitted as a disruptive client-side API mutation error: the server already returned a safe duplicate-username response, but the generic client mutation listener logged it as an API failure and the gateway gave no recovery action.
 - [x] Present duplicate usernames as an inline, actionable account-gateway state that offers existing-user sign-in or choosing another username.
 - [x] Add automated coverage for duplicate-account recovery alongside successful sign-in and registration transitions.
-- [ ] Checkpoint and deliver the corrected duplicate-username registration interaction.
+- [x] Checkpoint the corrected duplicate-username registration interaction as version 7fc19ef9 and prepare its verified delivery summary.
