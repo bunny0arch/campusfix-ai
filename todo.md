@@ -72,7 +72,7 @@
 - [x] Add a responsive post-login sidebar with Dashboard, Profile, and logout actions without redesigning the existing public support homepage.
 - [x] Build a protected Profile view for basic personal details and old-password-confirmed password changes.
 - [x] Add security-focused regression tests for account creation, credential rejection, session protection, profile persistence, password changes, and injection-like input.
-- [ ] Verify desktop and mobile account flows, checkpoint the secure account enhancement, and provide a concise security coverage summary.
+- [x] Verify desktop and mobile account flows, checkpoint the secure account enhancement, and prepare a concise security coverage summary.
 - [x] Confirm which configured MCPs and API keys are materially required for the account-enabled support flow, retain the existing model path only for diagnostics, and exclude ElevenLabs. No configured MCP action is required for local credentials, sessions, or profile storage.
 - [x] Add automated API/router coverage for account registration, login, logout, session lookup, invalid credentials, and rate-limit error handling.
 - [x] Add protected endpoint coverage proving unauthenticated users cannot read or update account profiles and verifying profile persistence for authenticated local users.
@@ -80,3 +80,6 @@
 - [x] Add an automated successful-login regression proving valid local credentials return only safe user fields and issue a local session.
 - [x] Prove the protected updateProfile router operation rejects unauthenticated and non-local callers.
 - [x] Add a password-rotation regression proving the old password fails and the new password succeeds in a subsequent local login.
+- [x] Run browser-based desktop and mobile verification of the authenticated account journey: registration or login, transition into the homepage, sidebar navigation, Profile, password change, and logout.
+- [x] Capture authenticated desktop and mobile evidence for the post-login support shell, sidebar, and Profile screen before the final account-flow verification checkpoint.
+- [x] Allow Profile submissions with an intentionally blank optional email address and cover that behavior in the authenticated journey verification.

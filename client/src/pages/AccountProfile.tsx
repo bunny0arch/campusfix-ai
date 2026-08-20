@@ -27,7 +27,7 @@ export default function AccountProfile() {
   }, [profile.data]);
 
   const updateField = <Key extends keyof ProfileForm>(key: Key, value: ProfileForm[Key]) => setForm(current => ({ ...current, [key]: value }));
-  const saveProfile = async (event: FormEvent) => { event.preventDefault(); setSaved(false); await update.mutateAsync(form); setSaved(true); window.setTimeout(() => setSaved(false), 2400); };
+  const saveProfile = async (event: FormEvent) => { event.preventDefault(); setSaved(false); await update.mutateAsync({ ...form, email: form.email.trim() || undefined }); setSaved(true); window.setTimeout(() => setSaved(false), 2400); };
   const savePassword = async (event: FormEvent) => {
     event.preventDefault(); setPasswordError(null); setPasswordStatus(false);
     if (newPassword !== confirmPassword) { setPasswordError("The new passwords do not match."); return; }
