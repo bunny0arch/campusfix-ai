@@ -15,7 +15,7 @@
 - [x] Add safe, idempotent scheduled handlers for stale-ticket escalation, daily analytics summaries, and system-health checks.
 - [x] Add focused Vitest coverage for agent routing, ticket workflow constraints, and authorization.
 - [x] Verify responsive visual quality, streaming behavior, persistence, and server health; refine implementation findings.
-- [ ] Save the completed build as a delivery checkpoint.
+- [x] Save the completed build as a delivery checkpoint.
 - [x] Fix the remaining Tailwind/CSS glass-panel transform error and confirm the frontend compilation is clean.
 - [x] Superseded by visual verification of the public no-sign-in diagnostic interface after the product redesign.
 - [x] Inspect and verify the final workspace, ticketing, knowledge, operations, streaming, orchestration, and scheduled-operation implementations before delivery.
@@ -40,7 +40,12 @@
 - [x] Add public diagnostic endpoint tests for no-login sessions, outcome recording, streamed completion persistence, and conditional ticket creation.
 - [x] Add focused browser voice-control fallback tests or narrow implementation claims to manual browser behavior.
 - [x] Reduce and measure public client bundle cost by pruning noncritical motion and markdown dependencies; verified production JavaScript bundle is 656.89 kB before compression.
-- [ ] Save the revised public prototype as a checkpoint after the final verification pass.
+- [x] Save the revised public prototype as a checkpoint after the final verification pass.
 - [x] Add automated endpoint-level coverage for anonymous diagnostic sessions, message persistence, outcomes, and ticket escalation.
 - [x] Narrow the bundle-optimization record to the dependency pruning that was implemented and the verified final production bundle measurement.
 - [x] Revise the bundle optimization record to state only the verified final production result when the earlier artifact cannot be reproduced.
+- [x] Audit the public CampusFix surface against the requested non-generic, product-specific design principles.
+- [x] Define and document a distinctive CampusFix visual direction, hierarchy, interaction model, type, color, spacing, and responsive rules before any UI refinement.
+- [x] Apply only design refinements that improve the public support experience without changing diagnostic, voice, stream, persistence, or escalation behavior.
+- [x] Visually validate the refined public experience at desktop and mobile sizes and rerun functional checks.
+- [ ] Save any validated design refinement as a separate checkpoint.
