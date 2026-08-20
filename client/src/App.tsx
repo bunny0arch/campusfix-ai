@@ -13,8 +13,11 @@ import PublicSupport from "./pages/PublicSupport";
 function Router() {
   const account = trpc.account.session.useQuery(undefined, { retry: false, staleTime: 0 });
   if (account.isLoading) return <main className="account-session-loading">Checking your secure CampusFix session…</main>;
-  if (!account.data) return <AccountGate onAuthenticated={async () => { await account.refetch(); }} />;
-  return <AccountWorkspaceShell user={account.data}><Switch><Route path="/" component={PublicSupport} /><Route path="/profile" component={AccountProfile} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch></AccountWorkspaceShell>;
+  if (!account.data) return <AccountGate onAuthenticated={async () => {
+    const refreshed = await account.refetch();
+    if (!refreshed.data) throw new Error("Your account was created, but the secure session could not be restored. Please try signing in again.");
+  }} />;
+  return <AccountWorkspaceShell user={account.data}><div className="account-workspace-enter"><Switch><Route path="/" component={PublicSupport} /><Route path="/profile" component={AccountProfile} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch></div></AccountWorkspaceShell>;
 }
 
 export default function App() {

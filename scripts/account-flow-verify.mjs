@@ -12,6 +12,7 @@ async function createAccountAndVerifyDesktop(browser) {
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Create secure account" }).click();
+  await page.getByText("Account created", { exact: true }).waitFor();
   await page.locator(".account-desktop-sidebar .account-sidebar").waitFor();
   await page.screenshot({ path: "/home/ubuntu/account-verification-desktop-dashboard.png", fullPage: true });
 
@@ -45,6 +46,7 @@ async function verifyMobileLoginAndNavigation(browser) {
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in to CampusFix" }).click();
+  await page.getByText("Signed in successfully", { exact: true }).waitFor();
   await page.getByLabel("Open account navigation").waitFor();
   await page.screenshot({ path: "/home/ubuntu/account-verification-mobile-dashboard.png", fullPage: true });
 

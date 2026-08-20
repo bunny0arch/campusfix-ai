@@ -1,6 +1,8 @@
 import { ArrowLeft, ArrowRight, KeyRound, LoaderCircle, ShieldCheck, UserRound } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { accountSuccessFeedback } from "@/lib/account-feedback";
 
 type AccountMode = "choice" | "login" | "register";
 
@@ -23,11 +25,17 @@ export default function AccountGate({ onAuthenticated }: { onAuthenticated: () =
     event.preventDefault();
     setError(null);
     try {
-      if (mode === "register") await register.mutateAsync({ username, password });
+      if (mode === "choice") return;
+      const completedMode: "login" | "register" = mode;
+      if (completedMode === "register") await register.mutateAsync({ username, password });
       else await login.mutateAsync({ username, password });
+      const feedback = accountSuccessFeedback(completedMode);
+      toast.success(feedback.title, { description: feedback.description });
       await onAuthenticated();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "We could not complete that request.");
+      const message = caught instanceof Error ? caught.message : "We could not complete that request.";
+      setError(message);
+      toast.error("Account access could not be completed", { description: message });
     }
   };
 

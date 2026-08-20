@@ -91,3 +91,8 @@
 - [x] Re-run browser-based desktop and mobile account-entry verification after the registration repair and record the successful evidence.
 - [x] Remove the runtime deprecation warning from local-session cookie clearing and confirm logout behavior remains covered.
 - [x] Restart the development service, perform a real authenticated logout, and confirm no new Express cookie-clear deprecation warning is written to the runtime log.
+- [x] Diagnose why the account-gateway existing-user and new-user controls appear non-responsive in the live interface: the controls were clickable, but the transition lacked explicit success feedback and did not fail clearly when session restoration could not complete.
+- [x] Repair successful sign-up so it creates the session, shows a success notification, and immediately opens the protected support homepage.
+- [x] Repair successful sign-in so it shows a success notification and immediately opens the protected support homepage.
+- [x] Add automated and desktop/mobile browser coverage for the repaired account-gateway click, success-notification, and homepage-transition flows.
+- [ ] Checkpoint and deliver the repaired authentication interaction flow.
