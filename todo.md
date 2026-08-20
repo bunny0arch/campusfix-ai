@@ -94,3 +94,6 @@
 - [x] Add one focused regression that follows the same eligible support session from automatic ticket opening through automatic matching-ticket resolution.
 - [x] Capture and review desktop and mobile evidence that documents both Current and Resolved ticket states alongside the browser-provided American English voice control.
 - [x] Review and record the final desktop Resolved ticket state with the voice control before checkpointing.
+- [x] Replace the light workspace palette with a soothing autumn-dark system of espresso, cocoa, walnut, muted rust, and warm oat highlights without changing support behavior.
+- [x] Add restrained autumn gradients, depth, focus, and status treatments that preserve readable ticket, voice, and safety controls on desktop and mobile.
+- [x] Re-verify the public support flow and responsive interface after the autumn-dark visual refinement.
