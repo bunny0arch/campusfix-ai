@@ -53,6 +53,16 @@
 - [x] Replace blue/cyan visual accents, borders, focus states, and decorative treatments with the warm palette without altering support behavior.
 - [x] Introduce only purposeful warm gradients for focal hierarchy and status feedback; avoid ambient or excessive gradient use.
 - [x] Verify the warm CampusFix experience at desktop and mobile sizes, including readable focus, safety, voice, and outcome states.
-- [ ] Save the validated warm-palette refinement as a separate checkpoint.
+- [x] Save the validated warm-palette refinement as a separate checkpoint.
+- [x] Audit CampusFix against every acceptance criterion in sections 4.1–4.8 and document the supported, partial, and missing requirements.
+- [x] Inspect configured connector availability before selecting any external model, voice, database, storage, or visual-generation integration.
+- [x] Define a safe low-latency model-routing policy using only verified providers and preserving the first-level support guardrails.
+- [ ] Upgrade public voice assistance with server-backed speech-to-text and high-quality spoken responses where verified service credentials are available.
+- [x] Keep public support data in the existing structured database unless a verified Supabase migration is necessary and safe; do not duplicate records across stores.
+- [x] Enhance mobile-first motion and visual feedback only where it shortens or clarifies diagnostic work.
+- [x] Add measured latency instrumentation and focused regression tests for the selected integration paths.
+- [x] Re-verify the complete public diagnostic workflow, responsive interface, and data safety after enhancements.
+- [x] Save the validated, requirements-audited enhancement and prepare the coverage report, including clearly documented integration boundaries.
 - [x] Exercise and verify warm-palette focus, voice fallback, safety guidance, and unresolved escalation states in the public support flow; responsive base and state styling are covered by desktop/mobile review plus automated tests.
 - [x] Capture final evidence of the warm focus treatment and mobile state controls before saving the palette refinement: desktop focus renders a 3 px pale-beige outline; the captured 390 px mobile review confirms compact, readable voice, safety, outcome, and issue controls without overflow, while shared state CSS and automated workflow coverage preserve the escalation and voice fallback states.
+- [x] Resolve and verify the development server's ESM module path for the low-latency model router before the final enhancement checkpoint.

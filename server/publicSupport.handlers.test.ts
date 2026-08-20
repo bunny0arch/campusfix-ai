@@ -5,10 +5,13 @@ const mocks = vi.hoisted(() => ({
   requireDb: vi.fn(),
   findKnowledge: vi.fn(),
   invokeLLM: vi.fn(),
+  fastJsonCompletion: vi.fn(),
+  streamFastSupportResponse: vi.fn(),
 }));
 
 vi.mock("./campusfix", () => ({ requireDb: mocks.requireDb, findKnowledge: mocks.findKnowledge }));
 vi.mock("./_core/llm", () => ({ invokeLLM: mocks.invokeLLM }));
+vi.mock("./modelRouter.js", () => ({ fastJsonCompletion: mocks.fastJsonCompletion, streamFastSupportResponse: mocks.streamFastSupportResponse }));
 
 import { createPublicSupportTicket, recordPublicOutcome, streamPublicITDiagnosis } from "./publicSupport";
 
@@ -50,9 +53,10 @@ describe("public CampusFix support endpoints", () => {
     const { db, inserts } = createDb([[], []]);
     mocks.requireDb.mockResolvedValue(db);
     mocks.findKnowledge.mockResolvedValue([]);
-    mocks.invokeLLM.mockResolvedValue({ choices: [{ message: { content: JSON.stringify({ stage: "clarify", category: "wifi", priority: "medium", escalationRecommended: false, intent: "Identify the Wi-Fi connection error." }) } }] });
+    mocks.fastJsonCompletion.mockResolvedValue(JSON.stringify({ stage: "clarify", category: "wifi", priority: "medium", escalationRecommended: false, intent: "Identify the Wi-Fi connection error." }));
     const encoder = new TextEncoder();
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Which network are you trying to join?"}}]}\n\ndata: [DONE]\n\n')); controller.close(); } }) })));
+    mocks.streamFastSupportResponse.mockImplementation(async () => fetch("https://stream.test"));
     const { response, writes } = createResponse();
 
     await streamPublicITDiagnosis({ body: { visitorToken: "anonymous-demo", message: "Wi-Fi is not connecting." } } as Request, response);
@@ -60,6 +64,7 @@ describe("public CampusFix support endpoints", () => {
     expect(inserts).toHaveLength(3);
     expect(inserts[0]).toMatchObject({ visitorToken: "anonymous-demo" });
     expect(inserts.slice(1)).toEqual(expect.arrayContaining([expect.objectContaining({ role: "user" }), expect.objectContaining({ role: "assistant", content: "Which network are you trying to join?" })]));
+    expect(writes.join("")).toContain("event: latency");
     expect(writes.join("")).toContain("event: complete");
   });
 

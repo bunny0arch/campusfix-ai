@@ -60,6 +60,7 @@ export default function PublicSupport() {
   const [canEscalate, setCanEscalate] = useState(false);
   const [ticketNumber, setTicketNumber] = useState<string>();
   const [resolved, setResolved] = useState(false);
+  const [firstReplyMs, setFirstReplyMs] = useState<number>();
   const contentRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
   const token = useMemo(() => visitorToken(), []);
@@ -95,9 +96,11 @@ export default function PublicSupport() {
     if (event.type === "session") setSessionId(event.sessionId);
     if (event.type === "status") setStatus(event.label);
     if (event.type === "stage") { setStage(event.stage); setStatus(event.intent); }
+    if (event.type === "latency") setFirstReplyMs(event.firstTokenMs);
     if (event.type === "token") setMessages(current => current.map(message => message.id === placeholderId ? { ...message, content: message.content + event.delta } : message));
     if (event.type === "complete") {
       setStage(event.stage); setCanEscalate(event.canEscalate); setStatus(event.stage === "escalate" ? "IT handoff recommended" : "Waiting for your outcome");
+      if (event.latency?.firstTokenMs) setFirstReplyMs(event.latency.firstTokenMs);
       setMessages(current => current.map(message => message.id === placeholderId ? { ...message, citations: event.citations } : message));
     }
     if (event.type === "error") toast.error(event.message);
@@ -108,7 +111,7 @@ export default function PublicSupport() {
     if (!clean || isStreaming) return;
     const placeholderId = `assistant-${Date.now()}`;
     setMessages(current => [...current, { id: `user-${Date.now()}`, role: "user", content: clean }, { id: placeholderId, role: "assistant", content: "" }]);
-    setDraft(""); setResolved(false); setTicketNumber(undefined); setIsStreaming(true); setStatus("Understanding the issue");
+    setDraft(""); setResolved(false); setTicketNumber(undefined); setFirstReplyMs(undefined); setIsStreaming(true); setStatus("Understanding the issue");
     try { await streamPublicDiagnosis({ message: clean, visitorToken: token, sessionId }, event => handleEvent(event, placeholderId)); }
     catch (error) { setMessages(current => current.filter(message => message.id !== placeholderId)); toast.error(error instanceof Error ? error.message : "CampusFix could not start."); }
     finally { setIsStreaming(false); }
@@ -144,7 +147,7 @@ export default function PublicSupport() {
 
     <section className="support-grid motion-enter" aria-label="CampusFix diagnostic workspace">
       <div className="conversation-panel">
-        <div className="panel-topbar"><div><p className="panel-label">LIVE DIAGNOSIS</p><p className="panel-status"><Radio size={13} /> {status}</p></div><Button variant="ghost" size="icon" className="utility-button" onClick={speakLatest} aria-label="Read last assistant message aloud"><Volume2 size={17} /></Button></div>
+        <div className="panel-topbar"><div><p className="panel-label">LIVE DIAGNOSIS</p><p className="panel-status"><Radio size={13} /> {status}{firstReplyMs ? <span className="latency-readout">First reply {Math.max(0.1, firstReplyMs / 1000).toFixed(1)}s</span> : null}</p></div><Button variant="ghost" size="icon" className="utility-button" onClick={speakLatest} aria-label="Read last assistant message aloud"><Volume2 size={17} /></Button></div>
         <div className="conversation-stream" ref={contentRef} aria-live="polite">
           {messages.map(message => <article key={message.id} className={`message-row message-enter ${message.role}`}>
             {message.role === "assistant" && <div className="message-mark"><Sparkles size={14} /></div>}

@@ -2,9 +2,9 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { nanoid } from "nanoid";
 import { publicSupportMessages, publicSupportSessions, publicSupportTickets } from "../drizzle/schema";
-import { ENV } from "./_core/env";
 import { invokeLLM, type Message } from "./_core/llm";
 import { findKnowledge, requireDb } from "./campusfix";
+import { fastJsonCompletion, streamFastSupportResponse } from "./modelRouter.js";
 
 type DiagnosticStage = "clarify" | "retrieve" | "guide" | "check" | "escalate";
 type ITCategory = "wifi" | "account" | "password" | "software" | "network" | "printing" | "configuration" | "general";
@@ -20,6 +20,30 @@ type DiagnosticPlan = {
 type PublicMessage = { role: "user" | "assistant"; content: string };
 
 const MAX_PUBLIC_MESSAGES = 18;
+
+export function fastInitialDiagnosticPlan(message: string, history: PublicMessage[]): DiagnosticPlan | undefined {
+  if (history.length > 0) return undefined;
+  const input = message.toLowerCase();
+  const categories: Array<[ITCategory, RegExp]> = [
+    ["wifi", /\b(wi-?fi|eduroam|wireless)\b/],
+    ["account", /\b(login|log in|sign in|account|sso)\b/],
+    ["password", /\b(password|passcode|reset)\b/],
+    ["software", /\b(install|installation|software|application|app)\b/],
+    ["network", /\b(network|internet|connectivity|vpn)\b/],
+    ["printing", /\b(print|printer|printing)\b/],
+    ["configuration", /\b(configuration|configure|settings)\b/],
+  ];
+  const category = categories.find(([, pattern]) => pattern.test(input))?.[0];
+  if (!category) return undefined;
+  const elevated = /\b(outage|all devices|many people|security|phishing|lost|stolen|data loss)\b/.test(input);
+  return {
+    stage: elevated ? "escalate" : "clarify",
+    category,
+    priority: elevated ? "high" : "medium",
+    escalationRecommended: elevated,
+    intent: elevated ? "Potential widespread or security-sensitive IT issue" : `First-turn ${category} diagnostic intake`,
+  };
+}
 
 export function redactSensitiveSupportInput(input: string) {
   return input
@@ -51,17 +75,23 @@ function contentAsText(content: unknown) {
 }
 
 async function createPlan(message: string, history: PublicMessage[]): Promise<DiagnosticPlan> {
-  const response = await invokeLLM({
-    model: "gpt-5-mini",
-    messages: [
+  const initialPlan = fastInitialDiagnosticPlan(message, history);
+  if (initialPlan) return initialPlan;
+  const messages: Message[] = [
       {
         role: "system",
-        content: "You are a first-level university IT intake coordinator. Return a compact JSON plan only. Support Wi-Fi, login/account access, password access, software installation, connectivity, printing, and safe system configuration. Stage rules: clarify when a key fact is missing; retrieve when verified documentation should be located; guide for safe reversible user steps; check after steps are given; escalate for security, privileged administration, data-loss risk, suspected outage, repeated failure, or human-only work. Never ask for passwords, MFA codes, recovery codes, or personal identifiers. Never prescribe privilege escalation, firewall/registry/antivirus changes, remote access, or destructive network/system actions.",
+        content: "You are a first-level university IT intake coordinator. Return JSON only with stage, category, priority, escalationRecommended, and intent. Support Wi-Fi, login/account access, password access, software installation, connectivity, printing, and safe system configuration. Stage rules: clarify when a key fact is missing; retrieve when verified documentation should be located; guide for safe reversible user steps; check after steps are given; escalate for security, privileged administration, data-loss risk, suspected outage, repeated failure, or human-only work. Never ask for passwords, MFA codes, recovery codes, or personal identifiers. Never prescribe privilege escalation, firewall/registry/antivirus changes, remote access, or destructive network/system actions.",
       },
       ...history.slice(-6).map(item => ({ role: item.role, content: item.content })),
       { role: "user", content: message },
-    ],
-    response_format: {
+    ];
+  try {
+    return JSON.parse(await fastJsonCompletion(messages)) as DiagnosticPlan;
+  } catch {
+    const response = await invokeLLM({
+      model: "gpt-5-mini",
+      messages,
+      response_format: {
       type: "json_schema",
       json_schema: {
         name: "campusfix_public_diagnostic_plan",
@@ -79,9 +109,21 @@ async function createPlan(message: string, history: PublicMessage[]): Promise<Di
           additionalProperties: false,
         },
       },
-    },
+      },
+    });
+    return JSON.parse(contentAsText(response.choices[0]?.message.content)) as DiagnosticPlan;
+  }
+}
+
+async function streamBuiltInSupportResponse(messages: Message[], signal: AbortSignal): Promise<globalThis.Response> {
+  const response = await fetch(`${process.env.BUILT_IN_FORGE_API_URL?.replace(/\/$/, "")}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.BUILT_IN_FORGE_API_KEY}` },
+    body: JSON.stringify({ model: "gpt-5-mini", stream: true, messages }),
+    signal,
   });
-  return JSON.parse(contentAsText(response.choices[0]?.message.content)) as DiagnosticPlan;
+  if (!response.ok || !response.body) throw new Error("The AI response stream is unavailable.");
+  return response;
 }
 
 function buildDiagnosticMessages(history: PublicMessage[], plan: DiagnosticPlan, knowledge: Awaited<ReturnType<typeof findKnowledge>>): Message[] {
@@ -154,18 +196,23 @@ export async function streamPublicITDiagnosis(req: Request, res: Response) {
     const controller = new AbortController();
     let closed = false;
     res.on("close", () => { closed = true; controller.abort(); });
-    const upstream = await fetch(`${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ENV.forgeApiKey}` },
-      body: JSON.stringify({ model: "gpt-5-mini", stream: true, messages: buildDiagnosticMessages([...history, { role: "user", content: message }] as PublicMessage[], plan, knowledge) }),
-      signal: controller.signal,
-    });
-    if (!upstream.ok || !upstream.body) throw new Error("The AI response stream is unavailable.");
+    const diagnosticMessages = buildDiagnosticMessages([...history, { role: "user", content: message }] as PublicMessage[], plan, knowledge);
+    const streamStartedAt = performance.now();
+    let upstream: globalThis.Response;
+    try {
+      upstream = await streamFastSupportResponse(diagnosticMessages, controller.signal);
+      writeEvent(res, "status", { label: "Preparing a fast, safe response", state: "responding" });
+    } catch {
+      upstream = await streamBuiltInSupportResponse(diagnosticMessages, controller.signal);
+      writeEvent(res, "status", { label: "Preparing a safe response", state: "responding" });
+    }
 
+    if (!upstream.body) throw new Error("The AI response stream is unavailable.");
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
+    let firstTokenAt: number | undefined;
     while (!closed) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -177,7 +224,14 @@ export async function streamPublicITDiagnosis(req: Request, res: Response) {
         if (!line || line.slice(6) === "[DONE]") continue;
         try {
           const delta = getTextDelta(JSON.parse(line.slice(6)));
-          if (delta) { content += delta; writeEvent(res, "token", { delta }); }
+          if (delta) {
+            content += delta;
+            if (firstTokenAt === undefined) {
+              firstTokenAt = performance.now();
+              writeEvent(res, "latency", { firstTokenMs: Math.round(firstTokenAt - streamStartedAt) });
+            }
+            writeEvent(res, "token", { delta });
+          }
         } catch { /* Ignore malformed upstream chunks while preserving the session. */ }
       }
     }
@@ -189,10 +243,13 @@ export async function streamPublicITDiagnosis(req: Request, res: Response) {
         const db = await requireDb();
         await db.update(publicSupportSessions).set({ status: "escalated" }).where(eq(publicSupportSessions.id, session.id));
       }
-      writeEvent(res, "complete", { stage: plan.stage, citations, canEscalate: plan.escalationRecommended || plan.stage === "escalate" });
+      const totalMs = Math.round(performance.now() - streamStartedAt);
+      writeEvent(res, "complete", { stage: plan.stage, citations, canEscalate: plan.escalationRecommended || plan.stage === "escalate", latency: { firstTokenMs: firstTokenAt ? Math.round(firstTokenAt - streamStartedAt) : null, totalMs } });
+      console.info(`[CampusFix] public diagnostic stream completed in ${totalMs}ms${firstTokenAt ? ` (first token ${Math.round(firstTokenAt - streamStartedAt)}ms)` : ""}`);
       res.end();
     }
   } catch (error) {
+    console.warn("[CampusFix] public diagnostic stream failed", error instanceof Error ? error.message : "unknown error");
     if (!res.headersSent) return res.status(500).json({ error: "CampusFix could not complete the diagnosis. Please retry." });
     writeEvent(res, "error", { message: "CampusFix could not complete the diagnosis. Please retry." });
     res.end();
