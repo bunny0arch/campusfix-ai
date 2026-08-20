@@ -48,4 +48,11 @@
 - [x] Define and document a distinctive CampusFix visual direction, hierarchy, interaction model, type, color, spacing, and responsive rules before any UI refinement.
 - [x] Apply only design refinements that improve the public support experience without changing diagnostic, voice, stream, persistence, or escalation behavior.
 - [x] Visually validate the refined public experience at desktop and mobile sizes and rerun functional checks.
-- [ ] Save any validated design refinement as a separate checkpoint.
+- [x] Save any validated design refinement as a separate checkpoint.
+- [x] Define a restrained warm CampusFix palette using beige, cream, ember red, burnt orange, and graphite with accessible contrast roles.
+- [x] Replace blue/cyan visual accents, borders, focus states, and decorative treatments with the warm palette without altering support behavior.
+- [x] Introduce only purposeful warm gradients for focal hierarchy and status feedback; avoid ambient or excessive gradient use.
+- [x] Verify the warm CampusFix experience at desktop and mobile sizes, including readable focus, safety, voice, and outcome states.
+- [ ] Save the validated warm-palette refinement as a separate checkpoint.
+- [x] Exercise and verify warm-palette focus, voice fallback, safety guidance, and unresolved escalation states in the public support flow; responsive base and state styling are covered by desktop/mobile review plus automated tests.
+- [x] Capture final evidence of the warm focus treatment and mobile state controls before saving the palette refinement: desktop focus renders a 3 px pale-beige outline; the captured 390 px mobile review confirms compact, readable voice, safety, outcome, and issue controls without overflow, while shared state CSS and automated workflow coverage preserve the escalation and voice fallback states.
