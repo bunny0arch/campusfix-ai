@@ -96,11 +96,21 @@
 - [x] Repair successful sign-in so it shows a success notification and immediately opens the protected support homepage.
 - [x] Add automated and desktop/mobile browser coverage for the repaired account-gateway click, success-notification, and homepage-transition flows.
 - [x] Checkpoint the repaired authentication interaction flow as version 079bba4d and prepare its verified delivery summary.
-- [ ] Inspect the connected Vercel project’s latest deployment status, build settings, environment requirements, and runtime logs.
-- [ ] Audit CampusFix’s current build, Express runtime, database, authentication, and static-serving assumptions for Vercel compatibility.
-- [ ] Implement a production-safe Vercel deployment adapter or configuration without changing the CampusFix user workflows.
-- [ ] Add Vercel-oriented build and runtime regression checks, then verify the corrected deployment behavior.
+- [x] Inspect the connected Vercel account: its only visible project is not CampusFix, so live CampusFix deployment logs and settings cannot be read from the currently connected account.
+- [x] Audit CampusFix’s current build, Express runtime, database, authentication, and static-serving assumptions for Vercel compatibility.
+- [x] Implement a production-safe Vercel deployment adapter or configuration without changing the CampusFix user workflows.
+- [x] Add Vercel-oriented build and runtime regression checks, then verify the corrected local build and shared application behavior.
 - [ ] Checkpoint and deliver the Vercel deployment repair with the required configuration guidance.
+- [x] Extract a reusable Express application factory and expose it through a Vercel serverless function without binding a listener in the Vercel runtime.
+- [x] Add Vercel project routing and build configuration so API routes reach the serverless handler and client routes resolve to the Vite SPA.
+- [x] Document and validate the required Vercel production environment variables, including database, session, diagnostic-model, and any Manus-only feature boundaries.
+- [ ] Obtain access to the actual CampusFix Vercel project or team, then inspect its deployment settings, environment variables, and latest build and runtime logs.
+- [ ] Deploy the Vercel adapter to the real CampusFix Vercel project and verify API routing, SPA rewrites, secure local-account cookies, and authenticated session flows in production.
+- [ ] Record deployed verification for `/api/trpc`, local account sign-up/sign-in, public diagnostic streaming, static SPA deep links, and explicitly deferred Manus-only features.
+- [x] Inspect https://campusfix-trinetras.vercel.app for its live deployment response, API behavior, SPA routing, and production error surface: the root returns `application/javascript` containing bundled server code rather than the Vite HTML entrypoint.
+- [x] Prevent Vercel from ever serving the bundled Node server artifact as the static site root by separating the Vite client output (`dist`) from the local Node build output (`server-dist`); a production smoke test now returns `text/html` from the root.
+- [x] Inspect the current deployed Vercel API response and a SPA deep link, then record the pre-redeploy behavior: both `/api/trpc` and `/profile` return Vercel `404 NOT_FOUND`, confirming no function routing or SPA rewrite is currently deployed.
+- [ ] After the corrected revision is deployed, re-run live root, API, SPA routing, local-account, and diagnostic verification on Vercel.
 - [x] Diagnose why an expected duplicate username is still emitted as a disruptive client-side API mutation error: the server already returned a safe duplicate-username response, but the generic client mutation listener logged it as an API failure and the gateway gave no recovery action.
 - [x] Present duplicate usernames as an inline, actionable account-gateway state that offers existing-user sign-in or choosing another username.
 - [x] Add automated coverage for duplicate-account recovery alongside successful sign-in and registration transitions.
