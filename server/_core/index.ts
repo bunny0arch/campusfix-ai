@@ -6,6 +6,9 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { streamCampusFixAgent } from "../agentStream";
+import { createPublicSupportTicket, recordPublicOutcome, streamPublicITDiagnosis } from "../publicSupport";
+import { runCampusFixScheduledOperation } from "../scheduledOperations";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -36,6 +39,11 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.post("/api/campusfix/stream", streamCampusFixAgent);
+  app.post("/api/campusfix/public/diagnose", streamPublicITDiagnosis);
+  app.post("/api/campusfix/public/outcome", recordPublicOutcome);
+  app.post("/api/campusfix/public/ticket", createPublicSupportTicket);
+  app.post("/api/scheduled/campusfix-operations", runCampusFixScheduledOperation);
   // tRPC API
   app.use(
     "/api/trpc",
