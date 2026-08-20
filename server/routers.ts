@@ -3,7 +3,6 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { campusfixRouter } from "./routers/campusfix";
-import { localAccountRouter } from "./routers/localAccount";
 import { automationRouter } from "./routers/automation";
 
 export const appRouter = router({
@@ -19,7 +18,6 @@ export const appRouter = router({
       } as const;
     }),
   }),
-  account: localAccountRouter,
   campusfix: campusfixRouter,
   automation: automationRouter,
 });
