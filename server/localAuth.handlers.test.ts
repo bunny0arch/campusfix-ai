@@ -40,6 +40,22 @@ describe("local account handlers", () => {
     expect(res.cookie).toHaveBeenCalledWith("campusfix_local_session", expect.any(String), expect.objectContaining({ httpOnly: true, sameSite: "lax" }));
   });
 
+  it("maps a driver-wrapped duplicate username error to the safe username-taken response", async () => {
+    const driverError = Object.assign(new Error("Duplicate entry"), { code: "ER_DUP_ENTRY" });
+    const queryError = Object.assign(new Error("Failed query"), { cause: driverError });
+    const tx = {
+      insert: () => ({ values: async (value: unknown) => {
+        if (typeof value === "object" && value !== null && "passwordHash" in value) throw queryError;
+      } }),
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [user] }) }) }),
+    };
+    const db = { transaction: async (work: (inner: typeof tx) => Promise<unknown>) => work(tx) };
+    mocks.getDb.mockResolvedValue(db);
+
+    await expect(registerLocalAccount(request(), response(), { username: "taken.user", password: "CampusFixSecurePass2026" }))
+      .rejects.toMatchObject<Partial<LocalAccountError>>({ reason: "username_taken" });
+  });
+
   it("resolves only a matching unexpired opaque local session", async () => {
     const db = {
       select: () => ({ from: () => ({ innerJoin: () => ({ where: () => ({ limit: async () => [{ user }] }) }) }) }),

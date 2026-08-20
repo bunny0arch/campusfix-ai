@@ -52,6 +52,16 @@ function tokenDigest(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function databaseErrorCode(error: unknown) {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    const record = current as { code?: unknown; cause?: unknown };
+    if (typeof record.code === "string") return record.code;
+    current = record.cause;
+  }
+  return undefined;
+}
+
 function requestKey(request: Request) {
   return request.ip || request.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || "unknown";
 }
@@ -154,7 +164,7 @@ export async function registerLocalAccount(request: Request, response: Response,
     return user;
   } catch (error) {
     if (error instanceof LocalAccountError) throw error;
-    if ((error as { code?: string }).code === "ER_DUP_ENTRY") throw new LocalAccountError("username_taken");
+    if (databaseErrorCode(error) === "ER_DUP_ENTRY") throw new LocalAccountError("username_taken");
     throw error;
   }
 }
@@ -184,7 +194,8 @@ export async function logoutLocalAccount(request: Request, response: Response) {
   const token = readCookie(request);
   const db = await getDb();
   if (token && db) await db.delete(localAccountSessions).where(eq(localAccountSessions.tokenHash, tokenDigest(token)));
-  response.clearCookie(LOCAL_SESSION_COOKIE, { ...sessionCookieOptions(request), maxAge: -1 });
+  const { maxAge: _maxAge, ...clearCookieOptions } = sessionCookieOptions(request);
+  response.clearCookie(LOCAL_SESSION_COOKIE, clearCookieOptions);
 }
 
 function cleanText(value: string | null | undefined, maxLength: number) {
