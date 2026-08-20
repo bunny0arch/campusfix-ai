@@ -112,6 +112,8 @@
 - [x] Inspect the current deployed Vercel API response and a SPA deep link, then record the pre-redeploy behavior: both `/api/trpc` and `/profile` return Vercel `404 NOT_FOUND`, confirming no function routing or SPA rewrite is currently deployed.
 - [ ] After the corrected revision is deployed, re-run live root, API, SPA routing, local-account, and diagnostic verification on Vercel.
 - [ ] Diagnose and repair the live Vercel `FUNCTION_INVOCATION_FAILED` cold-start failure affecting both tRPC and public API routes after static routing is corrected.
+- [ ] Retrieve the Vercel function runtime diagnostics for the persistent `FUNCTION_INVOCATION_FAILED` responses at `sin1::zvn2z-1787215563001-2b11a2f7d445` and `sin1::6tdrd-1787215563681-e68a2a2283a3`.
+- [x] Add a minimal Vercel API health response and dynamic shared-app loader that contains startup errors behind a safe diagnostic response and server-side logging.
 - [x] Eliminate local-only shared-module aliases from the Vercel cold-start import graph and verify the serverless entry can load without Vite path-alias resolution; this tracker entry is superseded by the completed verification recorded immediately below.
 - [x] Eliminate local-only shared-module aliases from the Vercel cold-start import graph and verify the serverless entry can load without Vite path-alias resolution.
 - [x] Diagnose why an expected duplicate username is still emitted as a disruptive client-side API mutation error: the server already returned a safe duplicate-username response, but the generic client mutation listener logged it as an API failure and the gateway gave no recovery action.

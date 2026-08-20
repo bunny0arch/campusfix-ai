@@ -13,6 +13,10 @@ The associated routes are also absent from the live deployment: `GET /api/trpc` 
 
 After the static and SPA routing repair, the Vercel root and deep links updated successfully, but both tRPC and public POST probes returned `FUNCTION_INVOCATION_FAILED`. The serverless cold-start graph has been made portable by replacing local Vite-only `@shared/*` aliases in the eager OAuth and tRPC dependencies with explicit relative imports. The complete suite, type check, and separated production build pass locally; the next deployment revision requires live API verification.
 
+The portable-import revision reached the supplied Vercel URL at **2026-08-20 08:46 GMT**. The root (`/`) and SPA deep link (`/profile`) now both return **HTTP 200 text/html**, confirming the output separation and SPA rewrite are live. However, `GET /api/trpc` still returns **HTTP 500 FUNCTION_INVOCATION_FAILED** (`sin1::zvn2z-1787215563001-2b11a2f7d445`), and `POST /api/campusfix/public/outcome` returns the same failure (`sin1::6tdrd-1787215563681-e68a2a2283a3`). The remaining issue is therefore inside the Vercel function startup/runtime, not the static or route configuration.
+
+The Vercel handler now provides a minimal `/api/health` response before loading the shared application and lazy-loads that app only for application routes. If a startup dependency remains unavailable, the response is a stable JSON `VERCEL_API_STARTUP_ERROR` and the original exception is written to the platform log. This allows the next live deployment to distinguish a function platform failure from an application-startup or missing-environment failure without exposing sensitive implementation details.
+
 This indicates that the currently deployed Vercel project is serving the Node server bundle as its static entry point rather than serving the Vite client build from `dist/public` and routing API requests through a Vercel Function.
 
 ## Required production configuration
