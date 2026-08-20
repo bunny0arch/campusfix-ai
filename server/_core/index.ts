@@ -7,7 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { streamCampusFixAgent } from "../agentStream";
-import { createPublicSupportTicket, recordPublicOutcome, streamPublicITDiagnosis } from "../publicSupport";
+import { createPublicSupportTicket, listPublicSupportTickets, recordPublicOutcome, streamPublicITDiagnosis } from "../publicSupport";
 import { runCampusFixScheduledOperation } from "../scheduledOperations";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -43,6 +43,7 @@ async function startServer() {
   app.post("/api/campusfix/public/diagnose", streamPublicITDiagnosis);
   app.post("/api/campusfix/public/outcome", recordPublicOutcome);
   app.post("/api/campusfix/public/ticket", createPublicSupportTicket);
+  app.get("/api/campusfix/public/tickets", listPublicSupportTickets);
   app.post("/api/scheduled/campusfix-operations", runCampusFixScheduledOperation);
   // tRPC API
   app.use(

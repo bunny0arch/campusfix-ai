@@ -13,7 +13,7 @@ vi.mock("./campusfix", () => ({ requireDb: mocks.requireDb, findKnowledge: mocks
 vi.mock("./_core/llm", () => ({ invokeLLM: mocks.invokeLLM }));
 vi.mock("./modelRouter.js", () => ({ fastJsonCompletion: mocks.fastJsonCompletion, streamFastSupportResponse: mocks.streamFastSupportResponse }));
 
-import { createPublicSupportTicket, recordPublicOutcome, streamPublicITDiagnosis } from "./publicSupport";
+import { configuredPublicSupportContact, createPublicSupportTicket, listPublicSupportTickets, recordPublicOutcome, streamPublicITDiagnosis } from "./publicSupport";
 
 function createDb(selectQueue: unknown[][]) {
   const inserts: unknown[] = [];
@@ -46,6 +46,28 @@ function createResponse() {
     on: vi.fn(),
   };
   return { response: response as unknown as Response, writes, raw: response };
+}
+
+function createTicketListDb() {
+  const tickets = [
+    { id: "open-ticket", ticketNumber: "IT-2026-OPEN", status: "open", title: "Wi-Fi request" },
+    { id: "resolved-ticket", ticketNumber: "IT-2026-DONE", status: "resolved", title: "Printer request" },
+  ];
+  let selectCount = 0;
+  return {
+    db: {
+      select: () => {
+        selectCount += 1;
+        return {
+          from: () => ({
+            where: () => selectCount === 1
+              ? Promise.resolve([{ id: "session-1" }, { id: "session-2" }])
+              : ({ orderBy: async () => tickets }),
+          }),
+        };
+      },
+    },
+  };
 }
 
 describe("public CampusFix support endpoints", () => {
@@ -94,6 +116,36 @@ describe("public CampusFix support endpoints", () => {
     expect(writes.join("")).toContain("Preparing a safe response");
   });
 
+  it("lists the visitor's current and resolved tickets in separate groups", async () => {
+    const { db } = createTicketListDb();
+    mocks.requireDb.mockResolvedValue(db);
+    const { response, raw } = createResponse();
+
+    await listPublicSupportTickets({ query: { visitorToken: "visitor" } } as unknown as Request, response);
+
+    expect(raw.json).toHaveBeenCalledWith({
+      current: [expect.objectContaining({ ticketNumber: "IT-2026-OPEN", status: "open" })],
+      resolved: [expect.objectContaining({ ticketNumber: "IT-2026-DONE", status: "resolved" })],
+    });
+  });
+
+  it("only exposes an official support contact when a valid address is configured", () => {
+    const originalEmail = process.env.CAMPUSFIX_SUPPORT_EMAIL;
+    const originalLabel = process.env.CAMPUSFIX_SUPPORT_LABEL;
+    process.env.CAMPUSFIX_SUPPORT_EMAIL = "helpdesk@university.example";
+    process.env.CAMPUSFIX_SUPPORT_LABEL = "Campus Infrastructure Team";
+    expect(configuredPublicSupportContact()).toEqual({ assigneeName: "Campus Infrastructure Team", assigneeEmail: "helpdesk@university.example" });
+    process.env.CAMPUSFIX_SUPPORT_EMAIL = "invalid-address";
+    expect(configuredPublicSupportContact()).toBeUndefined();
+    process.env.CAMPUSFIX_SUPPORT_EMAIL = originalEmail;
+    process.env.CAMPUSFIX_SUPPORT_LABEL = originalLabel;
+  });
+
+  it("accepts the configured deployment support contact without exposing its address", () => {
+    const contact = configuredPublicSupportContact();
+    expect(contact?.assigneeEmail).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+  });
+
   it("records an unresolved outcome as escalated for anonymous support", async () => {
     const { db, updates } = createDb([[{ id: "session-1", visitorToken: "visitor", status: "diagnosing" }]]);
     mocks.requireDb.mockResolvedValue(db);
@@ -117,5 +169,37 @@ describe("public CampusFix support endpoints", () => {
     const allowed = createResponse();
     await createPublicSupportTicket({ body: { sessionId: "session-1", visitorToken: "visitor" } } as Request, allowed.response);
     expect(allowed.raw.json).toHaveBeenCalledWith({ ticket: { ticketNumber: "IT-2026-DEMO" }, reused: true });
+  });
+
+  it("raises a safe classified ticket even when the secondary plan request is unavailable", async () => {
+    const created = createDb([
+      [{ id: "session-1", visitorToken: "visitor", status: "escalated", title: "Wi-Fi issue" }],
+      [],
+      [{ role: "user", content: "Campus Wi-Fi will not connect." }],
+    ]);
+    mocks.requireDb.mockResolvedValue(created.db);
+    mocks.fastJsonCompletion.mockRejectedValue(new Error("Groq unavailable"));
+    mocks.invokeLLM.mockRejectedValue(new Error("fallback unavailable"));
+    const { response, raw } = createResponse();
+
+    await createPublicSupportTicket({ body: { sessionId: "session-1", visitorToken: "visitor" } } as Request, response);
+
+    expect(created.inserts).toEqual([expect.objectContaining({ category: "wifi", priority: "medium", ticketNumber: expect.stringMatching(/^IT-\d{4}-/) })]);
+    expect(raw.status).toHaveBeenCalledWith(201);
+  });
+
+  it("normalizes provider connectivity labels before inserting a ticket", async () => {
+    const created = createDb([
+      [{ id: "session-1", visitorToken: "visitor", status: "escalated", title: "Connection issue" }],
+      [],
+      [{ role: "user", content: "The campus internet does not work." }],
+    ]);
+    mocks.requireDb.mockResolvedValue(created.db);
+    mocks.fastJsonCompletion.mockResolvedValue(JSON.stringify({ stage: "escalate", category: "connectivity", priority: "medium", escalationRecommended: true, intent: "Network needs IT." }));
+    const { response } = createResponse();
+
+    await createPublicSupportTicket({ body: { sessionId: "session-1", visitorToken: "visitor" } } as Request, response);
+
+    expect(created.inserts).toEqual([expect.objectContaining({ category: "network" })]);
   });
 });

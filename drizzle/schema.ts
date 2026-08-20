@@ -257,6 +257,8 @@ export const publicSupportTickets = mysqlTable(
     priority: mysqlEnum("priority", ["low", "medium", "high", "critical"]).default("medium").notNull(),
     status: mysqlEnum("status", ["open", "in_progress", "resolved"]).default("open").notNull(),
     triageSummary: text("triageSummary"),
+    assigneeName: varchar("assigneeName", { length: 120 }),
+    assigneeEmail: varchar("assigneeEmail", { length: 320 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },

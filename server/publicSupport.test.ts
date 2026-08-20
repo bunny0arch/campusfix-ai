@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canCreatePublicTicket, fastInitialDiagnosticPlan, nextPublicSessionStatusForOutcome, redactSensitiveSupportInput } from "./publicSupport";
+import { canCreatePublicTicket, fastInitialDiagnosticPlan, isExplicitPublicTicketRequest, nextPublicSessionStatusForOutcome, redactSensitiveSupportInput } from "./publicSupport";
 
 describe("public CampusFix diagnostic privacy guard", () => {
   it("redacts credential-like values before they can be persisted or sent to the model", () => {
@@ -22,5 +22,10 @@ describe("public CampusFix diagnostic privacy guard", () => {
     expect(fastInitialDiagnosticPlan("Campus Wi-Fi will not connect on my phone.", [])).toMatchObject({ stage: "clarify", category: "wifi", escalationRecommended: false });
     expect(fastInitialDiagnosticPlan("The Wi-Fi outage affects all devices in the lab.", [])).toMatchObject({ stage: "escalate", category: "wifi", escalationRecommended: true });
     expect(fastInitialDiagnosticPlan("The network is still down.", [{ role: "assistant", content: "Which network?" }])).toBeUndefined();
+  });
+
+  it("recognizes a direct ticket request but not a request to avoid escalation", () => {
+    expect(isExplicitPublicTicketRequest("The steps did not work. Please raise an IT ticket.")).toBe(true);
+    expect(isExplicitPublicTicketRequest("Please do not raise a ticket yet.")).toBe(false);
   });
 });

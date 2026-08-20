@@ -1,12 +1,15 @@
 import { Button } from "@/components/ui/button";
-import { Check, ChevronRight, CircleHelp, Headphones, Loader2, Mic, MicOff, Radio, RefreshCw, Send, ShieldCheck, Sparkles, Ticket, Volume2, Wifi, Wrench } from "lucide-react";
+import { Check, ChevronRight, CircleHelp, Headphones, Loader2, Mail, Mic, MicOff, Radio, RefreshCw, Send, ShieldCheck, Sparkles, Ticket, Volume2, Wifi, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { streamPublicDiagnosis, type PublicStreamEvent } from "@/lib/public-support-stream";
 import { getVoiceCapabilities, voiceFallbackMessage } from "@/lib/voice-support";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type Stage = "clarify" | "retrieve" | "guide" | "check" | "escalate";
 type ChatMessage = { id: string; role: "assistant" | "user"; content: string; citations?: Array<{ title: string; sourceUrl?: string | null }> };
+type PublicTicket = { id?: string; ticketNumber: string; title: string; status: "open" | "in_progress" | "resolved"; priority?: string; assigneeName?: string | null; assigneeEmail?: string | null; updatedAt?: string };
+type TicketGroups = { current: PublicTicket[]; resolved: PublicTicket[] };
 
 type SpeechRecognitionCtor = new () => {
   continuous: boolean;
@@ -32,6 +35,15 @@ const starters = [
   { label: "I cannot access my account", icon: CircleHelp, prompt: "I cannot sign in to a campus service." },
   { label: "Printer is unavailable", icon: Wrench, prompt: "The campus printer is unavailable for me." },
 ];
+
+function ticketRequestIntent(message: string) {
+  return /\b(?:raise|create|open|log|submit)\s+(?:an?\s+)?(?:it|support)?\s*ticket\b/i.test(message)
+    || /\b(?:please|can you|could you)\s+(?:raise|create|open|log|submit)\b/i.test(message);
+}
+
+function ticketStatusLabel(status: PublicTicket["status"]) {
+  return status === "resolved" ? "Resolved" : status === "in_progress" ? "In progress" : "Open";
+}
 
 function AssistantText({ content }: { content: string }) {
   return <>{content.split("\n").map((line, index) => {
@@ -59,15 +71,27 @@ export default function PublicSupport() {
   const [isListening, setIsListening] = useState(false);
   const [canEscalate, setCanEscalate] = useState(false);
   const [ticketNumber, setTicketNumber] = useState<string>();
+  const [ticketContact, setTicketContact] = useState<Pick<PublicTicket, "assigneeName" | "assigneeEmail">>();
+  const [tickets, setTickets] = useState<TicketGroups>({ current: [], resolved: [] });
+  const [ticketsOpen, setTicketsOpen] = useState(false);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
   const [resolved, setResolved] = useState(false);
   const [firstReplyMs, setFirstReplyMs] = useState<number>();
   const contentRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
+  const sessionRef = useRef<string | undefined>(undefined);
+  const requestedTicketRef = useRef(false);
   const token = useMemo(() => visitorToken(), []);
   const activeStageIndex = stages.findIndex(item => item.id === stage);
+  const [visibleStageIndex, setVisibleStageIndex] = useState(activeStageIndex);
 
   useEffect(() => { contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight, behavior: "smooth" }); }, [messages, isStreaming]);
   useEffect(() => () => window.speechSynthesis?.cancel(), []);
+  useEffect(() => {
+    if (activeStageIndex <= visibleStageIndex) { setVisibleStageIndex(activeStageIndex); return; }
+    const timeout = window.setTimeout(() => setVisibleStageIndex(index => Math.min(index + 1, activeStageIndex)), 360);
+    return () => window.clearTimeout(timeout);
+  }, [activeStageIndex, visibleStageIndex]);
 
   const speakLatest = () => {
     const text = [...messages].reverse().find(message => message.role === "assistant")?.content.replace(/[*#_]/g, " ");
@@ -92,8 +116,27 @@ export default function PublicSupport() {
     recognition.start();
   };
 
+  const loadTickets = async () => {
+    setTicketsLoading(true);
+    try {
+      const response = await fetch(`/api/campusfix/public/tickets?visitorToken=${encodeURIComponent(token)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "CampusFix could not load your tickets.");
+      setTickets({ current: Array.isArray(payload.current) ? payload.current : [], resolved: Array.isArray(payload.resolved) ? payload.resolved : [] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "CampusFix could not load your tickets.");
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
+
+  const handleTicketsOpenChange = (open: boolean) => {
+    setTicketsOpen(open);
+    if (open) void loadTickets();
+  };
+
   const handleEvent = (event: PublicStreamEvent, placeholderId: string) => {
-    if (event.type === "session") setSessionId(event.sessionId);
+    if (event.type === "session") { setSessionId(event.sessionId); sessionRef.current = event.sessionId; }
     if (event.type === "status") setStatus(event.label);
     if (event.type === "stage") { setStage(event.stage); setStatus(event.intent); }
     if (event.type === "latency") setFirstReplyMs(event.firstTokenMs);
@@ -102,6 +145,7 @@ export default function PublicSupport() {
       setStage(event.stage); setCanEscalate(event.canEscalate); setStatus(event.stage === "escalate" ? "IT handoff recommended" : "Waiting for your outcome");
       if (event.latency?.firstTokenMs) setFirstReplyMs(event.latency.firstTokenMs);
       setMessages(current => current.map(message => message.id === placeholderId ? { ...message, citations: event.citations } : message));
+      if (event.canEscalate && requestedTicketRef.current) { requestedTicketRef.current = false; void createTicket(); }
     }
     if (event.type === "error") toast.error(event.message);
   };
@@ -109,9 +153,16 @@ export default function PublicSupport() {
   const submit = async (prompt = draft) => {
     const clean = prompt.trim();
     if (!clean || isStreaming) return;
+    if (ticketRequestIntent(clean) && canEscalate && (sessionId || sessionRef.current)) {
+      setMessages(current => [...current, { id: `user-${Date.now()}`, role: "user", content: clean }]);
+      setDraft("");
+      void createTicket();
+      return;
+    }
     const placeholderId = `assistant-${Date.now()}`;
     setMessages(current => [...current, { id: `user-${Date.now()}`, role: "user", content: clean }, { id: placeholderId, role: "assistant", content: "" }]);
-    setDraft(""); setResolved(false); setTicketNumber(undefined); setFirstReplyMs(undefined); setIsStreaming(true); setStatus("Understanding the issue");
+    requestedTicketRef.current = ticketRequestIntent(clean) && Boolean(sessionRef.current);
+    setDraft(""); setResolved(false); setTicketNumber(undefined); setTicketContact(undefined); setFirstReplyMs(undefined); setIsStreaming(true); setStatus("Understanding the issue");
     try { await streamPublicDiagnosis({ message: clean, visitorToken: token, sessionId }, event => handleEvent(event, placeholderId)); }
     catch (error) { setMessages(current => current.filter(message => message.id !== placeholderId)); toast.error(error instanceof Error ? error.message : "CampusFix could not start."); }
     finally { setIsStreaming(false); }
@@ -122,22 +173,27 @@ export default function PublicSupport() {
     const response = await fetch("/api/campusfix/public/outcome", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, visitorToken: token, outcome }) });
     if (!response.ok) return toast.error("The outcome could not be saved.");
     if (outcome === "resolved") { setResolved(true); setStatus("Resolved — session recorded"); toast.success("Great — the resolution has been recorded."); }
-    else { setCanEscalate(true); setStatus("An IT ticket can now be created"); }
+    else { setCanEscalate(true); setStage("escalate"); setStatus("An IT ticket can now be created"); }
   };
 
   const createTicket = async () => {
-    if (!sessionId || ticketNumber) return;
-    const response = await fetch("/api/campusfix/public/ticket", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, visitorToken: token }) });
+    const activeSessionId = sessionId || sessionRef.current;
+    if (!activeSessionId || ticketNumber) return;
+    const response = await fetch("/api/campusfix/public/ticket", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: activeSessionId, visitorToken: token }) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return toast.error(payload.error || "The IT ticket could not be created.");
-    setTicketNumber(payload.ticket.ticketNumber); setStage("escalate"); setStatus("Ticket created and queued for IT"); toast.success(`IT ticket ${payload.ticket.ticketNumber} created.`);
+    const ticket = payload.ticket as PublicTicket;
+    setTicketNumber(ticket.ticketNumber); setTicketContact({ assigneeName: ticket.assigneeName, assigneeEmail: ticket.assigneeEmail }); setStage("escalate"); setStatus("Ticket created and queued for IT");
+    setTickets(current => ({ current: [ticket, ...current.current.filter(item => item.ticketNumber !== ticket.ticketNumber)], resolved: current.resolved }));
+    setMessages(current => [...current, { id: `ticket-${Date.now()}`, role: "assistant", content: `**Ticket raised successfully — ${ticket.ticketNumber}.** You can check its status in Tickets.${ticket.assigneeEmail ? ` Contact ${ticket.assigneeName || "the assigned IT support team"} at ${ticket.assigneeEmail} and include this reference number.` : " An official support contact will appear here once IT assigns one."}` }]);
+    setTicketsOpen(true); toast.success(`IT ticket ${ticket.ticketNumber} created.`);
   };
 
   return <main className="support-shell">
     <div className="support-noise" aria-hidden="true" />
     <header className="support-header">
       <div className="brand-lockup"><span className="brand-orbit"><span /></span><span>CampusFix</span><span className="brand-subtitle">IT support, simplified</span></div>
-      <div className="header-status"><span className="live-pulse" /> Autonomous first-level support <span className="header-divider" /> No sign-in required</div>
+      <div className="header-actions"><div className="header-status"><span className="live-pulse" /> Autonomous first-level support <span className="header-divider" /> No sign-in required</div><Popover open={ticketsOpen} onOpenChange={handleTicketsOpenChange}><PopoverTrigger asChild><button className="tickets-trigger" type="button" aria-label="View your IT tickets"><Ticket size={15} /><span>Tickets</span>{tickets.current.length ? <b>{tickets.current.length}</b> : null}</button></PopoverTrigger><PopoverContent align="end" sideOffset={10} className="tickets-popover"><div className="tickets-popover-head"><div><p className="panel-label">YOUR SUPPORT</p><strong>Tickets</strong></div><button type="button" className="tickets-refresh" onClick={() => void loadTickets()} disabled={ticketsLoading} aria-label="Refresh tickets"><RefreshCw size={14} className={ticketsLoading ? "animate-spin" : ""} /></button></div><div className="ticket-groups">{([{ key: "current", label: "CURRENT", items: tickets.current }, { key: "resolved", label: "RESOLVED", items: tickets.resolved }] as const).map(group => <section key={group.key} className="ticket-group"><p>{group.label}</p>{group.items.length ? group.items.map(item => <article key={item.ticketNumber} className="ticket-list-item"><div><strong>{item.ticketNumber}</strong><span>{item.title}</span></div><em className={`ticket-status ${item.status}`}>{ticketStatusLabel(item.status)}</em>{item.assigneeEmail ? <a href={`mailto:${item.assigneeEmail}?subject=${encodeURIComponent(`CampusFix ${item.ticketNumber}`)}`}><Mail size={12} />{item.assigneeEmail}</a> : <small>Support contact pending assignment</small>}</article>) : <div className="ticket-empty">{group.key === "current" ? "No active tickets yet." : "No resolved tickets yet."}</div>}</section>)}</div></PopoverContent></Popover></div>
     </header>
 
     <section className="support-intro motion-enter">
@@ -159,9 +215,9 @@ export default function PublicSupport() {
       </div>
 
       <aside className="diagnostic-rail">
-        <section className="rail-card diagnosis-card"><div className="rail-heading"><span className="rail-icon"><Headphones size={16} /></span><div><p className="panel-label">DIAGNOSIS FLOW</p><p className="rail-title">One clear step at a time</p></div></div><div className="stage-list">{stages.map((item, index) => <div key={item.id} className={`stage-item ${index <= activeStageIndex ? "active" : ""} ${item.id === stage ? "current" : ""}`}><span className="stage-number">{index < activeStageIndex ? <Check size={12} /> : `0${index + 1}`}</span><div><strong>{item.label}</strong><small>{item.detail}</small></div></div>)}</div></section>
+        <section className="rail-card diagnosis-card"><div className="rail-heading"><span className="rail-icon"><Headphones size={16} /></span><div><p className="panel-label">DIAGNOSIS FLOW</p><p className="rail-title">One clear step at a time</p></div></div><div className="stage-list">{stages.map((item, index) => <div key={item.id} className={`stage-item ${index <= visibleStageIndex ? "active" : ""} ${index === visibleStageIndex ? "current" : ""}`}><span className="stage-number">{index < visibleStageIndex ? <Check size={12} /> : `0${index + 1}`}</span><div><strong>{item.label}</strong><small>{item.detail}</small></div></div>)}</div></section>
         <section className="rail-card safety-card"><ShieldCheck size={18} /><div><p className="panel-label">SAFETY BY DESIGN</p><p>Never asks for passwords, MFA codes, or recovery codes. It will not recommend unsafe network or system changes.</p></div></section>
-        <section className="rail-card outcome-card"><p className="panel-label">OUTCOME CHECK</p>{ticketNumber ? <div className="ticket-created"><Ticket size={18} /><div><strong>{ticketNumber}</strong><span>Your IT request is queued.</span></div></div> : resolved ? <div className="resolved-state"><Check size={18} /> Resolved and recorded</div> : <><p>Did the last step solve it?</p><div className="outcome-actions"><button onClick={() => recordOutcome("resolved")} disabled={!sessionId || isStreaming}>Yes, fixed</button><button onClick={() => recordOutcome("still_need_help")} disabled={!sessionId || isStreaming}>Not yet</button></div>{canEscalate && <Button onClick={createTicket} className="escalate-button"><Ticket size={16} />Create IT ticket</Button>}</>}</section>
+        <section className="rail-card outcome-card"><p className="panel-label">OUTCOME CHECK</p>{ticketNumber ? <div className="ticket-created"><Ticket size={18} /><div><strong>{ticketNumber}</strong><span>Your IT request is queued.</span>{ticketContact?.assigneeEmail ? <a href={`mailto:${ticketContact.assigneeEmail}?subject=${encodeURIComponent(`CampusFix ${ticketNumber}`)}`}><Mail size={12} />{ticketContact.assigneeEmail}</a> : <small>Support contact pending IT assignment.</small>}<button type="button" onClick={() => setTicketsOpen(true)}>View ticket status</button></div></div> : resolved ? <div className="resolved-state"><Check size={18} /> Resolved and recorded</div> : <><p>Did the last step solve it?</p><div className="outcome-actions"><button onClick={() => recordOutcome("resolved")} disabled={!sessionId || isStreaming}>Yes, fixed</button><button onClick={() => recordOutcome("still_need_help")} disabled={!sessionId || isStreaming}>Not yet</button></div>{canEscalate && <Button onClick={createTicket} className="escalate-button"><Ticket size={16} />Create IT ticket</Button>}</>}</section>
       </aside>
     </section>
 

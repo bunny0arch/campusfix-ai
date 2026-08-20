@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { nanoid } from "nanoid";
 import { publicSupportMessages, publicSupportSessions, publicSupportTickets } from "../drizzle/schema";
@@ -20,6 +20,25 @@ type DiagnosticPlan = {
 type PublicMessage = { role: "user" | "assistant"; content: string };
 
 const MAX_PUBLIC_MESSAGES = 18;
+const diagnosticCategories: ITCategory[] = ["wifi", "account", "password", "software", "network", "printing", "configuration", "general"];
+const diagnosticStages: DiagnosticStage[] = ["clarify", "retrieve", "guide", "check", "escalate"];
+const diagnosticPriorities: DiagnosticPlan["priority"][] = ["low", "medium", "high", "critical"];
+
+function normalizeDiagnosticPlan(value: unknown): DiagnosticPlan {
+  const candidate = value && typeof value === "object" ? value as Partial<DiagnosticPlan> : {};
+  const rawCategory = typeof candidate.category === "string" ? candidate.category.toLowerCase().trim() : "general";
+  const categoryAliases: Record<string, ITCategory> = { connectivity: "network", internet: "network", wireless: "wifi", login: "account", printer: "printing", settings: "configuration" };
+  const category = diagnosticCategories.includes(rawCategory as ITCategory) ? rawCategory as ITCategory : categoryAliases[rawCategory] ?? "general";
+  const stage = diagnosticStages.includes(candidate.stage as DiagnosticStage) ? candidate.stage as DiagnosticStage : "clarify";
+  const priority = diagnosticPriorities.includes(candidate.priority as DiagnosticPlan["priority"]) ? candidate.priority as DiagnosticPlan["priority"] : "medium";
+  return {
+    stage,
+    category,
+    priority,
+    escalationRecommended: Boolean(candidate.escalationRecommended) || stage === "escalate",
+    intent: typeof candidate.intent === "string" && candidate.intent.trim() ? candidate.intent.slice(0, 1000) : "Continue a safe first-level diagnosis",
+  };
+}
 
 export function fastInitialDiagnosticPlan(message: string, history: PublicMessage[]): DiagnosticPlan | undefined {
   if (history.length > 0) return undefined;
@@ -45,6 +64,13 @@ export function fastInitialDiagnosticPlan(message: string, history: PublicMessag
   };
 }
 
+export function isExplicitPublicTicketRequest(message: string) {
+  const input = message.toLowerCase();
+  if (/\b(?:do not|don't|dont|not)\s+(?:raise|create|open|log|submit)?\s*(?:an?\s+)?(?:it|support)?\s*ticket\b/.test(input)) return false;
+  return /\b(?:raise|create|open|log|submit)\s+(?:an?\s+)?(?:it|support)?\s*ticket\b/.test(input)
+    || /\b(?:please|can you|could you)\s+(?:raise|create|open|log|submit)\b/.test(input);
+}
+
 export function redactSensitiveSupportInput(input: string) {
   return input
     .replace(/\b(password|passcode|mfa code|verification code|recovery code)\s*[:=-]\s*[^\s,;]+/gi, "$1: [redacted]")
@@ -57,6 +83,20 @@ export function canCreatePublicTicket(sessionStatus: "diagnosing" | "resolved" |
 
 export function nextPublicSessionStatusForOutcome(outcome: "resolved" | "still_need_help") {
   return outcome === "resolved" ? "resolved" : "escalated" as const;
+}
+
+export function configuredPublicSupportContact() {
+  const email = process.env.CAMPUSFIX_SUPPORT_EMAIL?.trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return undefined;
+  const name = process.env.CAMPUSFIX_SUPPORT_LABEL?.trim().slice(0, 120) || "Campus IT Service Desk";
+  return { assigneeName: name, assigneeEmail: email };
+}
+
+function fallbackPublicTicketPlan(issue: string): DiagnosticPlan {
+  const classified = fastInitialDiagnosticPlan(issue, []);
+  return classified
+    ? { ...classified, stage: "escalate", escalationRecommended: true, intent: `Ticket requested after unresolved ${classified.category} diagnosis` }
+    : { stage: "escalate", category: "general", priority: "medium", escalationRecommended: true, intent: "Ticket requested after unresolved diagnosis" };
 }
 
 function writeEvent(res: Response, event: string, data: unknown) {
@@ -75,6 +115,15 @@ function contentAsText(content: unknown) {
 }
 
 async function createPlan(message: string, history: PublicMessage[]): Promise<DiagnosticPlan> {
+  if (history.length > 0 && isExplicitPublicTicketRequest(message)) {
+    return {
+      stage: "escalate",
+      category: "general",
+      priority: "medium",
+      escalationRecommended: true,
+      intent: "The user requested an IT ticket after the diagnosis did not resolve the issue",
+    };
+  }
   const initialPlan = fastInitialDiagnosticPlan(message, history);
   if (initialPlan) return initialPlan;
   const messages: Message[] = [
@@ -86,7 +135,7 @@ async function createPlan(message: string, history: PublicMessage[]): Promise<Di
       { role: "user", content: message },
     ];
   try {
-    return JSON.parse(await fastJsonCompletion(messages)) as DiagnosticPlan;
+    return normalizeDiagnosticPlan(JSON.parse(await fastJsonCompletion(messages)));
   } catch {
     const response = await invokeLLM({
       model: "gpt-5-mini",
@@ -111,7 +160,7 @@ async function createPlan(message: string, history: PublicMessage[]): Promise<Di
       },
       },
     });
-    return JSON.parse(contentAsText(response.choices[0]?.message.content)) as DiagnosticPlan;
+    return normalizeDiagnosticPlan(JSON.parse(contentAsText(response.choices[0]?.message.content)));
   }
 }
 
@@ -282,7 +331,12 @@ export async function createPublicSupportTicket(req: Request, res: Response) {
     if (existing[0]) return res.json({ ticket: existing[0], reused: true });
     const history = await getSessionHistory(sessionId);
     const issue = history.filter(item => item.role === "user").map(item => item.content).join("\n").slice(0, 5000);
-    const plan = await createPlan(issue, history as PublicMessage[]);
+    let plan: DiagnosticPlan;
+    try {
+      plan = await createPlan(issue, history as PublicMessage[]);
+    } catch {
+      plan = fallbackPublicTicketPlan(issue);
+    }
     const ticket = {
       id: nanoid(18),
       ticketNumber: `IT-${new Date().getFullYear()}-${nanoid(6).toUpperCase()}`,
@@ -292,11 +346,31 @@ export async function createPublicSupportTicket(req: Request, res: Response) {
       category: plan.category,
       priority: plan.priority,
       triageSummary: plan.intent.slice(0, 1000),
+      ...configuredPublicSupportContact(),
     };
     await db.insert(publicSupportTickets).values(ticket);
     await db.update(publicSupportSessions).set({ status: "escalated" }).where(eq(publicSupportSessions.id, sessionId));
     res.status(201).json({ ticket });
-  } catch {
+  } catch (error) {
+    console.warn("[CampusFix] public ticket creation failed", error instanceof Error ? error.message : "unknown error");
     res.status(500).json({ error: "CampusFix could not create the IT ticket." });
+  }
+}
+
+export async function listPublicSupportTickets(req: Request, res: Response) {
+  try {
+    const visitorToken = typeof req.query.visitorToken === "string" ? req.query.visitorToken.trim().slice(0, 64) : "";
+    if (!visitorToken) return res.status(400).json({ error: "Support session not found." });
+    const db = await requireDb();
+    const sessions = await db.select({ id: publicSupportSessions.id }).from(publicSupportSessions).where(eq(publicSupportSessions.visitorToken, visitorToken));
+    const sessionIds = sessions.map(session => session.id);
+    if (!sessionIds.length) return res.json({ current: [], resolved: [] });
+    const tickets = await db.select().from(publicSupportTickets).where(inArray(publicSupportTickets.sessionId, sessionIds)).orderBy(desc(publicSupportTickets.updatedAt));
+    res.json({
+      current: tickets.filter(ticket => ticket.status !== "resolved"),
+      resolved: tickets.filter(ticket => ticket.status === "resolved"),
+    });
+  } catch {
+    res.status(500).json({ error: "CampusFix could not load your IT tickets." });
   }
 }

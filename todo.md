@@ -70,3 +70,15 @@
 - [x] Add focused automated coverage for Groq request formatting, streamed token parsing, and fallback behavior.
 - [x] Verify the Groq-backed public diagnostic journey, type checks, and regression suite before checkpointing the provider migration.
 - [x] Run a live end-to-end Groq diagnostic stream through the public endpoint and verify session, token, completion, and safe escalation behavior.
+- [x] Add a top-right Tickets control that lists the visitor’s current and resolved public support tickets separately.
+- [x] Extend conditional public ticket creation to return a reference number and a configured, non-fabricated support contact when available.
+- [x] Recognize an explicit unresolved ticket request in the diagnostic chat and present clear ticket-raised confirmation with a Tickets-tab link.
+- [x] Advance the right-side diagnosis-flow indicator as diagnostic stages are reached and preserve the unresolved escalation path.
+- [x] Add regression coverage and responsive visual verification for ticket listing, ticket escalation, ticket confirmation, and diagnosis-flow progression.
+- [x] Capture browser-level evidence of chat-based ticket confirmation, Tickets menu access, and the reference/link interaction.
+- [x] Verify with a real public conversation that the diagnosis rail advances through streamed stages without breaking the unresolved escalation path.
+- [x] Capture desktop and mobile visual evidence for the opened Tickets menu and ticket-created confirmation state.
+- [x] Verify the ticket confirmation’s visible status action and support-contact link behavior in the browser.
+- [x] Produce and inspect a mobile capture that visibly includes both ticket-created confirmation and the opened Tickets menu.
+- [x] Ensure the mobile Tickets popover stacks above the hero content so current and resolved ticket details remain readable.
+- [ ] Verify, by mobile-browser hit testing, that Current, the created ticket, and the Resolved section are visible and unobscured within the opened Tickets popover. Deferred at the user's direction.
