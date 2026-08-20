@@ -57,7 +57,7 @@
 - [x] Audit CampusFix against every acceptance criterion in sections 4.1–4.8 and document the supported, partial, and missing requirements.
 - [x] Inspect configured connector availability before selecting any external model, voice, database, storage, or visual-generation integration.
 - [x] Define a safe low-latency model-routing policy using only verified providers and preserving the first-level support guardrails.
-- [ ] Upgrade public voice assistance with server-backed speech-to-text and high-quality spoken responses where verified service credentials are available.
+- [x] Defer optional server-backed ElevenLabs speech input and high-quality spoken responses at the user's direction; retain the verified browser-native voice input and spoken-response fallback.
 - [x] Keep public support data in the existing structured database unless a verified Supabase migration is necessary and safe; do not duplicate records across stores.
 - [x] Enhance mobile-first motion and visual feedback only where it shortens or clarifies diagnostic work.
 - [x] Add measured latency instrumentation and focused regression tests for the selected integration paths.
