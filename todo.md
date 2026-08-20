@@ -81,4 +81,4 @@
 - [x] Verify the ticket confirmation’s visible status action and support-contact link behavior in the browser.
 - [x] Produce and inspect a mobile capture that visibly includes both ticket-created confirmation and the opened Tickets menu.
 - [x] Ensure the mobile Tickets popover stacks above the hero content so current and resolved ticket details remain readable.
-- [ ] Verify, by mobile-browser hit testing, that Current, the created ticket, and the Resolved section are visible and unobscured within the opened Tickets popover. Deferred at the user's direction.
+- [x] Verify, by mobile-browser hit testing, that Current, the created ticket, and the Resolved section are visible and unobscured within the opened Tickets popover. Completed with `IT-2026-GG_7F0`; the temporary session and ticket were removed after verification.
