@@ -22,6 +22,13 @@
       "when": 1787201649843,
       "tag": "0002_military_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787207460540,
+      "tag": "0003_quiet_master_chief",
+      "breakpoints": true
     }
   ]
 }

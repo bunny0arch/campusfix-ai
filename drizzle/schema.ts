@@ -43,6 +43,39 @@ export const userProfiles = mysqlTable(
   table => ({ userUnique: uniqueIndex("user_profiles_user_unique").on(table.userId) })
 );
 
+/** Local CampusFix credentials are isolated from platform OAuth identity. Passwords are never stored directly. */
+export const localAccounts = mysqlTable(
+  "local_accounts",
+  {
+    id: varchar("id", { length: 32 }).primaryKey(),
+    userId: int("userId").notNull(),
+    username: varchar("username", { length: 32 }).notNull(),
+    passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    userUnique: uniqueIndex("local_accounts_user_unique").on(table.userId),
+    usernameUnique: uniqueIndex("local_accounts_username_unique").on(table.username),
+  })
+);
+
+/** Only a SHA-256 digest of each opaque browser session token is retained at rest. */
+export const localAccountSessions = mysqlTable(
+  "local_account_sessions",
+  {
+    id: varchar("id", { length: 32 }).primaryKey(),
+    userId: int("userId").notNull(),
+    tokenHash: varchar("tokenHash", { length: 64 }).notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    tokenUnique: uniqueIndex("local_account_sessions_token_unique").on(table.tokenHash),
+    userExpiry: index("local_account_sessions_user_expiry_idx").on(table.userId, table.expiresAt),
+  })
+);
+
 export const conversations = mysqlTable(
   "conversations",
   {
@@ -233,6 +266,7 @@ export const publicSupportTickets = mysqlTable(
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type UserProfile = typeof userProfiles.$inferSelect;
+export type LocalAccount = typeof localAccounts.$inferSelect;
 export type Ticket = typeof tickets.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type PublicSupportSession = typeof publicSupportSessions.$inferSelect;

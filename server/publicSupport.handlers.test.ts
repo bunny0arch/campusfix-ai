@@ -68,6 +68,32 @@ describe("public CampusFix support endpoints", () => {
     expect(writes.join("")).toContain("event: complete");
   });
 
+  it("falls back to the built-in stream when the Groq response path is unavailable", async () => {
+    const { db, inserts } = createDb([[], []]);
+    mocks.requireDb.mockResolvedValue(db);
+    mocks.findKnowledge.mockResolvedValue([]);
+    mocks.fastJsonCompletion.mockResolvedValue(JSON.stringify({ stage: "clarify", category: "printing", priority: "medium", escalationRecommended: false, intent: "Identify the printer status." }));
+    mocks.streamFastSupportResponse.mockRejectedValue(new Error("Groq 503"));
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Check whether the printer display shows an error."}}]}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { response, writes } = createResponse();
+
+    await streamPublicITDiagnosis({ body: { visitorToken: "anonymous-fallback", message: "The printer is unavailable." } } as Request, response);
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/v1/chat/completions"), expect.objectContaining({ method: "POST" }));
+    expect(inserts).toEqual(expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "Check whether the printer display shows an error." })]));
+    expect(writes.join("")).toContain("Preparing a safe response");
+  });
+
   it("records an unresolved outcome as escalated for anonymous support", async () => {
     const { db, updates } = createDb([[{ id: "session-1", visitorToken: "visitor", status: "diagnosing" }]]);
     mocks.requireDb.mockResolvedValue(db);

@@ -66,3 +66,7 @@
 - [x] Exercise and verify warm-palette focus, voice fallback, safety guidance, and unresolved escalation states in the public support flow; responsive base and state styling are covered by desktop/mobile review plus automated tests.
 - [x] Capture final evidence of the warm focus treatment and mobile state controls before saving the palette refinement: desktop focus renders a 3 px pale-beige outline; the captured 390 px mobile review confirms compact, readable voice, safety, outcome, and issue controls without overflow, while shared state CSS and automated workflow coverage preserve the escalation and voice fallback states.
 - [x] Resolve and verify the development server's ESM module path for the low-latency model router before the final enhancement checkpoint.
+- [x] Replace the OpenRouter primary diagnostic route with secure Groq streaming while preserving the built-in fallback and all first-level support guardrails.
+- [x] Add focused automated coverage for Groq request formatting, streamed token parsing, and fallback behavior.
+- [x] Verify the Groq-backed public diagnostic journey, type checks, and regression suite before checkpointing the provider migration.
+- [x] Run a live end-to-end Groq diagnostic stream through the public endpoint and verify session, token, completion, and safe escalation behavior.

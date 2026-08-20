@@ -1,9 +1,9 @@
 import type { Message } from "./_core/llm";
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const FAST_PUBLIC_MODELS = [
-  "poolside/laguna-xs-2.1:free",
-  "nvidia/nemotron-3.5-lightning:free",
+const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
+const FAST_GROQ_MODELS = [
+  "openai/gpt-oss-20b",
+  "openai/gpt-oss-120b",
 ] as const;
 
 type FastRequest = {
@@ -13,8 +13,8 @@ type FastRequest = {
   responseFormat?: "json_object";
 };
 
-function hasOpenRouter() {
-  return Boolean(process.env.OPENROUTER_API_KEY);
+function hasGroq() {
+  return Boolean(process.env.GROQ_API_KEY);
 }
 
 function normalizeMessages(messages: FastRequest["messages"]) {
@@ -25,32 +25,32 @@ function normalizeMessages(messages: FastRequest["messages"]) {
 }
 
 async function requestFastModel(request: FastRequest): Promise<Response> {
-  if (!hasOpenRouter()) throw new Error("OpenRouter is not configured.");
+  if (!hasGroq()) throw new Error("Groq is not configured.");
   let lastError: unknown;
-  for (const model of FAST_PUBLIC_MODELS) {
+  for (const model of FAST_GROQ_MODELS) {
     try {
       const timeout = AbortSignal.timeout(request.stream ? 14_000 : 8_000);
       const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout;
-      const response = await fetch(OPENROUTER_URL, {
+      const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "X-Title": "CampusFix AI",
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         },
         body: JSON.stringify({
           model,
           messages: normalizeMessages(request.messages),
           stream: Boolean(request.stream),
-          max_tokens: request.stream ? 300 : 220,
+          max_completion_tokens: request.stream ? 300 : 220,
           temperature: 0.15,
-          reasoning: { effort: "none", exclude: true },
+          reasoning_effort: "low",
+          reasoning_format: "hidden",
           ...(request.responseFormat ? { response_format: { type: request.responseFormat } } : {}),
         }),
         signal,
       });
       if (response.ok && (!request.stream || response.body)) return response;
-      lastError = new Error(`OpenRouter ${response.status}`);
+      lastError = new Error(`Groq ${response.status}`);
       await response.body?.cancel().catch(() => undefined);
     } catch (error) {
       lastError = error;
@@ -72,7 +72,8 @@ export function streamFastSupportResponse(messages: FastRequest["messages"], sig
 }
 
 export const fastModelPolicy = {
-  candidates: FAST_PUBLIC_MODELS,
+  provider: "groq",
+  candidates: FAST_GROQ_MODELS,
   planTimeoutMs: 8_000,
   streamStartTimeoutMs: 14_000,
 };
