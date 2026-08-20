@@ -71,6 +71,14 @@ export function isExplicitPublicTicketRequest(message: string) {
     || /\b(?:please|can you|could you)\s+(?:raise|create|open|log|submit)\b/.test(input);
 }
 
+export function isResolutionConfirmation(message: string) {
+  const input = message.toLowerCase().trim();
+  if (/\b(?:not fixed|not resolved|still (?:broken|down|failing|not working)|doesn't work|does not work)\b/.test(input)) return false;
+  return /\b(?:it'?s|is|issue|problem)?\s*(?:fixed|resolved|sorted|working now|back online)\b/.test(input)
+    || /\b(?:that|this|it)\s+(?:worked|works|is working)\b/.test(input)
+    || /\b(?:all good|problem solved)\b/.test(input);
+}
+
 export function redactSensitiveSupportInput(input: string) {
   return input
     .replace(/\b(password|passcode|mfa code|verification code|recovery code)\s*[:=-]\s*[^\s,;]+/gi, "$1: [redacted]")
@@ -97,6 +105,41 @@ function fallbackPublicTicketPlan(issue: string): DiagnosticPlan {
   return classified
     ? { ...classified, stage: "escalate", escalationRecommended: true, intent: `Ticket requested after unresolved ${classified.category} diagnosis` }
     : { stage: "escalate", category: "general", priority: "medium", escalationRecommended: true, intent: "Ticket requested after unresolved diagnosis" };
+}
+
+export async function applyAutomaticTicketLifecycle(params: {
+  session: { id: string; title: string };
+  message: string;
+  history: PublicMessage[];
+  plan: DiagnosticPlan;
+}) {
+  const db = await requireDb();
+  const existing = await db.select().from(publicSupportTickets).where(eq(publicSupportTickets.sessionId, params.session.id)).orderBy(desc(publicSupportTickets.createdAt)).limit(1);
+  const currentTicket = existing[0];
+
+  if (isResolutionConfirmation(params.message) && currentTicket && currentTicket.status !== "resolved") {
+    await db.update(publicSupportTickets).set({ status: "resolved" }).where(eq(publicSupportTickets.id, currentTicket.id));
+    await db.update(publicSupportSessions).set({ status: "resolved" }).where(eq(publicSupportSessions.id, params.session.id));
+    return { ...currentTicket, status: "resolved" as const, lifecycle: "resolved" as const };
+  }
+
+  const requiresImmediateEscalation = params.history.length === 0 && (params.plan.escalationRecommended || params.plan.stage === "escalate");
+  if (!requiresImmediateEscalation || currentTicket) return undefined;
+
+  const ticket = {
+    id: nanoid(18),
+    ticketNumber: `IT-${new Date().getFullYear()}-${nanoid(6).toUpperCase()}`,
+    sessionId: params.session.id,
+    title: `${params.plan.category.replace(/^./, char => char.toUpperCase())} support request`,
+    description: params.message.slice(0, 5000) || params.session.title,
+    category: params.plan.category,
+    priority: params.plan.priority,
+    status: "open" as const,
+    triageSummary: params.plan.intent.slice(0, 1000),
+    ...configuredPublicSupportContact(),
+  };
+  await db.insert(publicSupportTickets).values(ticket);
+  return { ...ticket, lifecycle: "opened" as const };
 }
 
 function writeEvent(res: Response, event: string, data: unknown) {
@@ -288,12 +331,13 @@ export async function streamPublicITDiagnosis(req: Request, res: Response) {
     if (!closed) {
       const citations = knowledge.map(article => ({ title: article.title, sourceUrl: article.sourceUrl }));
       await saveMessage({ sessionId: session.id, role: "assistant", stage: plan.stage, content, citations });
-      if (plan.escalationRecommended || plan.stage === "escalate") {
+      const lifecycleTicket = await applyAutomaticTicketLifecycle({ session, message, history: history as PublicMessage[], plan });
+      if (!lifecycleTicket && (plan.escalationRecommended || plan.stage === "escalate")) {
         const db = await requireDb();
         await db.update(publicSupportSessions).set({ status: "escalated" }).where(eq(publicSupportSessions.id, session.id));
       }
       const totalMs = Math.round(performance.now() - streamStartedAt);
-      writeEvent(res, "complete", { stage: plan.stage, citations, canEscalate: plan.escalationRecommended || plan.stage === "escalate", latency: { firstTokenMs: firstTokenAt ? Math.round(firstTokenAt - streamStartedAt) : null, totalMs } });
+      writeEvent(res, "complete", { stage: plan.stage, citations, canEscalate: !lifecycleTicket && (plan.escalationRecommended || plan.stage === "escalate"), ticket: lifecycleTicket, latency: { firstTokenMs: firstTokenAt ? Math.round(firstTokenAt - streamStartedAt) : null, totalMs } });
       console.info(`[CampusFix] public diagnostic stream completed in ${totalMs}ms${firstTokenAt ? ` (first token ${Math.round(firstTokenAt - streamStartedAt)}ms)` : ""}`);
       res.end();
     }
@@ -312,8 +356,16 @@ export async function recordPublicOutcome(req: Request, res: Response) {
     const db = await requireDb();
     const session = await db.select().from(publicSupportSessions).where(and(eq(publicSupportSessions.id, sessionId), eq(publicSupportSessions.visitorToken, visitorToken))).limit(1);
     if (!session[0]) return res.status(404).json({ error: "Support session not found." });
+    let ticket;
+    if (outcome === "resolved") {
+      const tickets = await db.select().from(publicSupportTickets).where(eq(publicSupportTickets.sessionId, sessionId)).orderBy(desc(publicSupportTickets.createdAt)).limit(1);
+      if (tickets[0] && tickets[0].status !== "resolved") {
+        await db.update(publicSupportTickets).set({ status: "resolved" }).where(eq(publicSupportTickets.id, tickets[0].id));
+        ticket = { ...tickets[0], status: "resolved" as const };
+      }
+    }
     await db.update(publicSupportSessions).set({ status: nextPublicSessionStatusForOutcome(outcome) }).where(eq(publicSupportSessions.id, sessionId));
-    res.json({ success: true, outcome });
+    res.json({ success: true, outcome, ticket });
   } catch {
     res.status(500).json({ error: "CampusFix could not record the outcome." });
   }
@@ -326,9 +378,9 @@ export async function createPublicSupportTicket(req: Request, res: Response) {
     const db = await requireDb();
     const session = await db.select().from(publicSupportSessions).where(and(eq(publicSupportSessions.id, sessionId), eq(publicSupportSessions.visitorToken, visitorToken))).limit(1);
     if (!session[0]) return res.status(404).json({ error: "Support session not found." });
-    if (!canCreatePublicTicket(session[0].status)) return res.status(409).json({ error: "Continue diagnosis or select ‘Not yet’ before creating an IT ticket." });
     const existing = await db.select().from(publicSupportTickets).where(eq(publicSupportTickets.sessionId, sessionId)).orderBy(desc(publicSupportTickets.createdAt)).limit(1);
     if (existing[0]) return res.json({ ticket: existing[0], reused: true });
+    if (!canCreatePublicTicket(session[0].status)) return res.status(409).json({ error: "Continue diagnosis or select ‘Not yet’ before creating an IT ticket." });
     const history = await getSessionHistory(sessionId);
     const issue = history.filter(item => item.role === "user").map(item => item.content).join("\n").slice(0, 5000);
     let plan: DiagnosticPlan;

@@ -13,7 +13,7 @@ vi.mock("./campusfix", () => ({ requireDb: mocks.requireDb, findKnowledge: mocks
 vi.mock("./_core/llm", () => ({ invokeLLM: mocks.invokeLLM }));
 vi.mock("./modelRouter.js", () => ({ fastJsonCompletion: mocks.fastJsonCompletion, streamFastSupportResponse: mocks.streamFastSupportResponse }));
 
-import { configuredPublicSupportContact, createPublicSupportTicket, listPublicSupportTickets, recordPublicOutcome, streamPublicITDiagnosis } from "./publicSupport";
+import { applyAutomaticTicketLifecycle, configuredPublicSupportContact, createPublicSupportTicket, listPublicSupportTickets, recordPublicOutcome, streamPublicITDiagnosis } from "./publicSupport";
 
 function createDb(selectQueue: unknown[][]) {
   const inserts: unknown[] = [];
@@ -70,6 +70,21 @@ function createTicketListDb() {
   };
 }
 
+function createLifecycleDb() {
+  const tickets: Array<Record<string, unknown>> = [];
+  const inserts: Array<Record<string, unknown>> = [];
+  const updates: Array<Record<string, unknown>> = [];
+  return {
+    inserts,
+    updates,
+    db: {
+      select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => tickets }) }) }) }),
+      insert: () => ({ values: async (value: Record<string, unknown>) => { inserts.push(value); tickets.push(value); } }),
+      update: () => ({ set: (value: Record<string, unknown>) => ({ where: async () => { updates.push(value); if (tickets[0]) Object.assign(tickets[0], value); } }) }),
+    },
+  };
+}
+
 describe("public CampusFix support endpoints", () => {
   it("creates an anonymous session and persists both sides of a completed streamed diagnosis", async () => {
     const { db, inserts } = createDb([[], []]);
@@ -81,13 +96,60 @@ describe("public CampusFix support endpoints", () => {
     mocks.streamFastSupportResponse.mockImplementation(async () => fetch("https://stream.test"));
     const { response, writes } = createResponse();
 
-    await streamPublicITDiagnosis({ body: { visitorToken: "anonymous-demo", message: "Wi-Fi is not connecting." } } as Request, response);
+    await streamPublicITDiagnosis({ body: { visitorToken: "anonymous-demo", message: "The campus Wi-Fi outage affects every device." } } as Request, response);
 
-    expect(inserts).toHaveLength(3);
+    expect(inserts).toHaveLength(4);
     expect(inserts[0]).toMatchObject({ visitorToken: "anonymous-demo" });
     expect(inserts.slice(1)).toEqual(expect.arrayContaining([expect.objectContaining({ role: "user" }), expect.objectContaining({ role: "assistant", content: "Which network are you trying to join?" })]));
+    expect(inserts).toEqual(expect.arrayContaining([expect.objectContaining({ category: "wifi", status: "open", ticketNumber: expect.stringMatching(/^IT-\d{4}-/) })]));
     expect(writes.join("")).toContain("event: latency");
     expect(writes.join("")).toContain("event: complete");
+  });
+
+  it("automatically resolves the matching current ticket after a resolution-confirming follow-up", async () => {
+    const { db, updates } = createDb([
+      [{ id: "session-1", visitorToken: "anonymous-lifecycle", title: "Campus Wi-Fi outage", status: "escalated" }],
+      [{ role: "user", content: "The campus Wi-Fi outage affects every device." }, { role: "assistant", content: "IT has been notified." }],
+      [{ id: "ticket-1", ticketNumber: "IT-2026-LIFECYCLE", status: "open", title: "Wi-Fi support request" }],
+    ]);
+    mocks.requireDb.mockResolvedValue(db);
+    mocks.findKnowledge.mockResolvedValue([]);
+    mocks.fastJsonCompletion.mockResolvedValue(JSON.stringify({ stage: "check", category: "wifi", priority: "high", escalationRecommended: false, intent: "Confirm whether campus Wi-Fi is restored." }));
+    const encoder = new TextEncoder();
+    mocks.streamFastSupportResponse.mockResolvedValue({ ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Glad it is working again."}}]}\n\ndata: [DONE]\n\n')); controller.close(); } }) });
+    const { response, writes } = createResponse();
+
+    await streamPublicITDiagnosis({ body: { visitorToken: "anonymous-lifecycle", sessionId: "session-1", message: "It is working now, thank you." } } as Request, response);
+
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "resolved" }),
+    ]));
+    expect(writes.join("")).toContain('"lifecycle":"resolved"');
+    expect(writes.join("")).toContain('"ticketNumber":"IT-2026-LIFECYCLE"');
+  });
+
+  it("runs one eligible session from automatic ticket opening through automatic resolution of that same ticket", async () => {
+    const lifecycle = createLifecycleDb();
+    mocks.requireDb.mockResolvedValue(lifecycle.db);
+    const session = { id: "session-lifecycle", title: "Campus Wi-Fi outage" };
+    const opening = await applyAutomaticTicketLifecycle({
+      session,
+      message: "The campus Wi-Fi outage affects every device in the building.",
+      history: [],
+      plan: { stage: "escalate", category: "wifi", priority: "high", escalationRecommended: true, intent: "Widespread campus Wi-Fi outage" },
+    });
+    const resolution = await applyAutomaticTicketLifecycle({
+      session,
+      message: "It is working now, thank you.",
+      history: [{ role: "user", content: "The campus Wi-Fi outage affects every device in the building." }],
+      plan: { stage: "check", category: "wifi", priority: "high", escalationRecommended: false, intent: "Confirm service restoration" },
+    });
+
+    expect(opening).toMatchObject({ lifecycle: "opened", status: "open", ticketNumber: expect.stringMatching(/^IT-\d{4}-/) });
+    expect(resolution).toMatchObject({ lifecycle: "resolved", status: "resolved" });
+    expect(resolution?.ticketNumber).toBe(opening?.ticketNumber);
+    expect(lifecycle.inserts).toHaveLength(1);
+    expect(lifecycle.updates).toEqual(expect.arrayContaining([expect.objectContaining({ status: "resolved" })]));
   });
 
   it("falls back to the built-in stream when the Groq response path is unavailable", async () => {

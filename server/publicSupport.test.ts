@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canCreatePublicTicket, fastInitialDiagnosticPlan, isExplicitPublicTicketRequest, nextPublicSessionStatusForOutcome, redactSensitiveSupportInput } from "./publicSupport";
+import { canCreatePublicTicket, fastInitialDiagnosticPlan, isExplicitPublicTicketRequest, isResolutionConfirmation, nextPublicSessionStatusForOutcome, redactSensitiveSupportInput } from "./publicSupport";
 
 describe("public CampusFix diagnostic privacy guard", () => {
   it("redacts credential-like values before they can be persisted or sent to the model", () => {
@@ -27,5 +27,11 @@ describe("public CampusFix diagnostic privacy guard", () => {
   it("recognizes a direct ticket request but not a request to avoid escalation", () => {
     expect(isExplicitPublicTicketRequest("The steps did not work. Please raise an IT ticket.")).toBe(true);
     expect(isExplicitPublicTicketRequest("Please do not raise a ticket yet.")).toBe(false);
+  });
+
+  it("recognizes a confirmed resolution while preserving unresolved language", () => {
+    expect(isResolutionConfirmation("It is working now, thank you.")).toBe(true);
+    expect(isResolutionConfirmation("All good — the issue is resolved.")).toBe(true);
+    expect(isResolutionConfirmation("It is not fixed; the Wi-Fi is still down.")).toBe(false);
   });
 });

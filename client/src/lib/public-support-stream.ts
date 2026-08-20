@@ -1,10 +1,12 @@
+export type PublicTicketLifecycle = { ticketNumber: string; title: string; status: "open" | "in_progress" | "resolved"; priority?: string; assigneeName?: string | null; assigneeEmail?: string | null };
+
 export type PublicStreamEvent =
   | { type: "session"; sessionId: string }
   | { type: "status"; label: string; state: string }
   | { type: "stage"; stage: "clarify" | "retrieve" | "guide" | "check" | "escalate"; intent: string; sourceCount: number }
   | { type: "latency"; firstTokenMs: number }
   | { type: "token"; delta: string }
-  | { type: "complete"; stage: "clarify" | "retrieve" | "guide" | "check" | "escalate"; citations: Array<{ title: string; sourceUrl?: string | null }>; canEscalate: boolean; latency?: { firstTokenMs: number | null; totalMs: number } }
+  | { type: "complete"; stage: "clarify" | "retrieve" | "guide" | "check" | "escalate"; citations: Array<{ title: string; sourceUrl?: string | null }>; canEscalate: boolean; ticket?: PublicTicketLifecycle & { lifecycle?: "opened" | "resolved" }; latency?: { firstTokenMs: number | null; totalMs: number } }
   | { type: "error"; message: string };
 
 export async function streamPublicDiagnosis(input: { message: string; visitorToken: string; sessionId?: string }, onEvent: (event: PublicStreamEvent) => void) {

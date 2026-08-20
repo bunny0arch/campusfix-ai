@@ -82,3 +82,15 @@
 - [x] Produce and inspect a mobile capture that visibly includes both ticket-created confirmation and the opened Tickets menu.
 - [x] Ensure the mobile Tickets popover stacks above the hero content so current and resolved ticket details remain readable.
 - [x] Verify, by mobile-browser hit testing, that Current, the created ticket, and the Resolved section are visible and unobscured within the opened Tickets popover. Completed with `IT-2026-GG_7F0`; the temporary session and ticket were removed after verification.
+- [x] Replace the dark service-console treatment with a light, cozy CampusFix workspace inspired by the supplied reference without copying its brand assets or content.
+- [x] Automate ticket lifecycle updates so explicitly escalated issues create or surface Current tickets and confirmed resolution moves the matching ticket to Resolved with updated counts.
+- [x] Add a browser-native American English voice selector that presents available feminine and masculine voice options without fabricating unavailable voices.
+- [x] Preserve public diagnostics, ticket privacy, safe escalation guardrails, and mobile usability through the visual redesign.
+- [x] Add regression coverage and desktop/mobile visual verification for lifecycle automation, voice selection, and the redesigned workspace.
+- [x] Restrict automated ticket opening to explicit escalation criteria or unresolved diagnosis outcomes so ordinary first-turn issues retain the required diagnose-before-ticket workflow.
+- [x] Verify and, if needed, complete the browser-native American English voice selector so it clearly exposes available feminine and masculine voice options without inventing voices, with focused tests and visual evidence.
+- [x] Add focused regression coverage that asserts automatic public-ticket opening and matching-ticket resolution in one lifecycle.
+- [x] Capture explicit desktop and mobile evidence for the grouped voice control and the Current-to-Resolved ticket states in the redesigned workspace.
+- [x] Add one focused regression that follows the same eligible support session from automatic ticket opening through automatic matching-ticket resolution.
+- [x] Capture and review desktop and mobile evidence that documents both Current and Resolved ticket states alongside the browser-provided American English voice control.
+- [x] Review and record the final desktop Resolved ticket state with the voice control before checkpointing.

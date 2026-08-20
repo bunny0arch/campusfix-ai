@@ -3,7 +3,7 @@ import { Check, ChevronRight, CircleHelp, Headphones, Loader2, Mail, Mic, MicOff
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { streamPublicDiagnosis, type PublicStreamEvent } from "@/lib/public-support-stream";
-import { getVoiceCapabilities, voiceFallbackMessage } from "@/lib/voice-support";
+import { getAmericanEnglishVoices, getVoiceCapabilities, groupAmericanEnglishVoices, voiceFallbackMessage } from "@/lib/voice-support";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type Stage = "clarify" | "retrieve" | "guide" | "check" | "escalate";
@@ -77,16 +77,30 @@ export default function PublicSupport() {
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [resolved, setResolved] = useState(false);
   const [firstReplyMs, setFirstReplyMs] = useState<number>();
+  const [americanVoices, setAmericanVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
   const sessionRef = useRef<string | undefined>(undefined);
   const requestedTicketRef = useRef(false);
   const token = useMemo(() => visitorToken(), []);
   const activeStageIndex = stages.findIndex(item => item.id === stage);
+  const groupedAmericanVoices = useMemo(() => groupAmericanEnglishVoices(americanVoices), [americanVoices]);
   const [visibleStageIndex, setVisibleStageIndex] = useState(activeStageIndex);
 
   useEffect(() => { contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight, behavior: "smooth" }); }, [messages, isStreaming]);
   useEffect(() => () => window.speechSynthesis?.cancel(), []);
+  useEffect(() => {
+    if (!getVoiceCapabilities(window).output) return;
+    const loadVoices = () => {
+      const voices = getAmericanEnglishVoices(window.speechSynthesis);
+      setAmericanVoices(voices);
+      setSelectedVoiceURI(current => current || voices[0]?.voiceURI || "");
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
   useEffect(() => {
     if (activeStageIndex <= visibleStageIndex) { setVisibleStageIndex(activeStageIndex); return; }
     const timeout = window.setTimeout(() => setVisibleStageIndex(index => Math.min(index + 1, activeStageIndex)), 360);
@@ -97,7 +111,11 @@ export default function PublicSupport() {
     const text = [...messages].reverse().find(message => message.role === "assistant")?.content.replace(/[*#_]/g, " ");
     if (!text || !getVoiceCapabilities(window).output) return toast.error(voiceFallbackMessage("output"));
     window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    const utterance = new SpeechSynthesisUtterance(text);
+    const selectedVoice = americanVoices.find(voice => voice.voiceURI === selectedVoiceURI);
+    utterance.lang = selectedVoice?.lang || "en-US";
+    if (selectedVoice) utterance.voice = selectedVoice;
+    window.speechSynthesis.speak(utterance);
   };
 
   const toggleVoice = () => {
@@ -145,6 +163,14 @@ export default function PublicSupport() {
       setStage(event.stage); setCanEscalate(event.canEscalate); setStatus(event.stage === "escalate" ? "IT handoff recommended" : "Waiting for your outcome");
       if (event.latency?.firstTokenMs) setFirstReplyMs(event.latency.firstTokenMs);
       setMessages(current => current.map(message => message.id === placeholderId ? { ...message, citations: event.citations } : message));
+      if (event.ticket) {
+        const ticket = event.ticket as PublicTicket;
+        setTickets(current => ticket.status === "resolved"
+          ? { current: current.current.filter(item => item.ticketNumber !== ticket.ticketNumber), resolved: [ticket, ...current.resolved.filter(item => item.ticketNumber !== ticket.ticketNumber)] }
+          : { current: [ticket, ...current.current.filter(item => item.ticketNumber !== ticket.ticketNumber)], resolved: current.resolved.filter(item => item.ticketNumber !== ticket.ticketNumber) });
+        if (ticket.status === "resolved") { setResolved(true); setStatus("Resolved — ticket status updated"); }
+        else { setTicketNumber(ticket.ticketNumber); setTicketContact({ assigneeName: ticket.assigneeName, assigneeEmail: ticket.assigneeEmail }); setStatus("Ticket opened and queued for IT"); }
+      }
       if (event.canEscalate && requestedTicketRef.current) { requestedTicketRef.current = false; void createTicket(); }
     }
     if (event.type === "error") toast.error(event.message);
@@ -171,8 +197,13 @@ export default function PublicSupport() {
   const recordOutcome = async (outcome: "resolved" | "still_need_help") => {
     if (!sessionId) return;
     const response = await fetch("/api/campusfix/public/outcome", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, visitorToken: token, outcome }) });
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) return toast.error("The outcome could not be saved.");
-    if (outcome === "resolved") { setResolved(true); setStatus("Resolved — session recorded"); toast.success("Great — the resolution has been recorded."); }
+    if (outcome === "resolved") {
+      const ticket = payload.ticket as PublicTicket | undefined;
+      if (ticket) setTickets(current => ({ current: current.current.filter(item => item.ticketNumber !== ticket.ticketNumber), resolved: [ticket, ...current.resolved.filter(item => item.ticketNumber !== ticket.ticketNumber)] }));
+      setResolved(true); setStatus(ticket ? "Resolved — ticket status updated" : "Resolved — session recorded"); toast.success(ticket ? "Great — your ticket was moved to Resolved." : "Great — the resolution has been recorded.");
+    }
     else { setCanEscalate(true); setStage("escalate"); setStatus("An IT ticket can now be created"); }
   };
 
@@ -193,7 +224,7 @@ export default function PublicSupport() {
     <div className="support-noise" aria-hidden="true" />
     <header className="support-header">
       <div className="brand-lockup"><span className="brand-orbit"><span /></span><span>CampusFix</span><span className="brand-subtitle">IT support, simplified</span></div>
-      <div className="header-actions"><div className="header-status"><span className="live-pulse" /> Autonomous first-level support <span className="header-divider" /> No sign-in required</div><Popover open={ticketsOpen} onOpenChange={handleTicketsOpenChange}><PopoverTrigger asChild><button className="tickets-trigger" type="button" aria-label="View your IT tickets"><Ticket size={15} /><span>Tickets</span>{tickets.current.length ? <b>{tickets.current.length}</b> : null}</button></PopoverTrigger><PopoverContent align="end" sideOffset={10} className="tickets-popover"><div className="tickets-popover-head"><div><p className="panel-label">YOUR SUPPORT</p><strong>Tickets</strong></div><button type="button" className="tickets-refresh" onClick={() => void loadTickets()} disabled={ticketsLoading} aria-label="Refresh tickets"><RefreshCw size={14} className={ticketsLoading ? "animate-spin" : ""} /></button></div><div className="ticket-groups">{([{ key: "current", label: "CURRENT", items: tickets.current }, { key: "resolved", label: "RESOLVED", items: tickets.resolved }] as const).map(group => <section key={group.key} className="ticket-group"><p>{group.label}</p>{group.items.length ? group.items.map(item => <article key={item.ticketNumber} className="ticket-list-item"><div><strong>{item.ticketNumber}</strong><span>{item.title}</span></div><em className={`ticket-status ${item.status}`}>{ticketStatusLabel(item.status)}</em>{item.assigneeEmail ? <a href={`mailto:${item.assigneeEmail}?subject=${encodeURIComponent(`CampusFix ${item.ticketNumber}`)}`}><Mail size={12} />{item.assigneeEmail}</a> : <small>Support contact pending assignment</small>}</article>) : <div className="ticket-empty">{group.key === "current" ? "No active tickets yet." : "No resolved tickets yet."}</div>}</section>)}</div></PopoverContent></Popover></div>
+      <div className="header-actions"><div className="header-status"><span className="live-pulse" /> Autonomous first-level support <span className="header-divider" /> No sign-in required</div><Popover open={ticketsOpen} onOpenChange={handleTicketsOpenChange}><PopoverTrigger asChild><button className="tickets-trigger" type="button" aria-label="View your IT tickets"><Ticket size={15} /><span>Tickets</span>{tickets.current.length ? <b>{tickets.current.length}</b> : null}</button></PopoverTrigger><PopoverContent align="end" sideOffset={10} className="tickets-popover"><div className="tickets-popover-head"><div><p className="panel-label">YOUR SUPPORT</p><strong>Tickets</strong></div><button type="button" className="tickets-refresh" onClick={() => void loadTickets()} disabled={ticketsLoading} aria-label="Refresh tickets"><RefreshCw size={14} className={ticketsLoading ? "animate-spin" : ""} /></button></div><div className="ticket-groups">{([{ key: "current", label: "CURRENT", items: tickets.current }, { key: "resolved", label: "RESOLVED", items: tickets.resolved }] as const).map(group => <section key={group.key} className="ticket-group"><p>{group.label}<span>{group.items.length}</span></p>{group.items.length ? group.items.map(item => <article key={item.ticketNumber} className="ticket-list-item"><div><strong>{item.ticketNumber}</strong><span>{item.title}</span></div><em className={`ticket-status ${item.status}`}>{ticketStatusLabel(item.status)}</em>{item.assigneeEmail ? <a href={`mailto:${item.assigneeEmail}?subject=${encodeURIComponent(`CampusFix ${item.ticketNumber}`)}`}><Mail size={12} />{item.assigneeEmail}</a> : <small>Support contact pending assignment</small>}</article>) : <div className="ticket-empty">{group.key === "current" ? "No active tickets yet." : "No resolved tickets yet."}</div>}</section>)}</div></PopoverContent></Popover></div>
     </header>
 
     <section className="support-intro motion-enter">
@@ -203,7 +234,7 @@ export default function PublicSupport() {
 
     <section className="support-grid motion-enter" aria-label="CampusFix diagnostic workspace">
       <div className="conversation-panel">
-        <div className="panel-topbar"><div><p className="panel-label">LIVE DIAGNOSIS</p><p className="panel-status"><Radio size={13} /> {status}{firstReplyMs ? <span className="latency-readout">First reply {Math.max(0.1, firstReplyMs / 1000).toFixed(1)}s</span> : null}</p></div><Button variant="ghost" size="icon" className="utility-button" onClick={speakLatest} aria-label="Read last assistant message aloud"><Volume2 size={17} /></Button></div>
+        <div className="panel-topbar"><div><p className="panel-label">LIVE DIAGNOSIS</p><p className="panel-status"><Radio size={13} /> {status}{firstReplyMs ? <span className="latency-readout">First reply {Math.max(0.1, firstReplyMs / 1000).toFixed(1)}s</span> : null}</p></div><div className="voice-actions">{americanVoices.length > 0 && <label className="voice-picker"><span>US voice</span><select value={selectedVoiceURI} onChange={event => setSelectedVoiceURI(event.target.value)} aria-label="Choose a browser-provided American English voice">{groupedAmericanVoices.feminine.length > 0 && <optgroup label="Feminine voice options">{groupedAmericanVoices.feminine.map(voice => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name.replace(/Microsoft |Google |Apple /g, "")}</option>)}</optgroup>}{groupedAmericanVoices.masculine.length > 0 && <optgroup label="Masculine voice options">{groupedAmericanVoices.masculine.map(voice => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name.replace(/Microsoft |Google |Apple /g, "")}</option>)}</optgroup>}{groupedAmericanVoices.other.length > 0 && <optgroup label="Other browser voices">{groupedAmericanVoices.other.map(voice => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name.replace(/Microsoft |Google |Apple /g, "")}</option>)}</optgroup>}</select></label>}<Button variant="ghost" size="icon" className="utility-button" onClick={speakLatest} aria-label="Read last assistant message aloud"><Volume2 size={17} /></Button></div></div>
         <div className="conversation-stream" ref={contentRef} aria-live="polite">
           {messages.map(message => <article key={message.id} className={`message-row message-enter ${message.role}`}>
             {message.role === "assistant" && <div className="message-mark"><Sparkles size={14} /></div>}
